@@ -97,6 +97,14 @@ private[spark] abstract class ExternalBlockManager {
    */
   def getBytes(blockId: BlockId): Option[ByteBuffer]
 
+  //zengdan
+  def loadBytes(blockId: BlockId): Option[ByteBuffer] = None
+
+  //zengdan
+  def loadValues(blockId: BlockId): Option[Iterator[_]] = {
+    loadBytes(blockId).map(buffer => blockManager.dataDeserialize(blockId, buffer))
+  }
+
   /**
    * Retrieve the block data.
    * @return Some(Iterator[Any]) if the block data is successfully retrieved
@@ -137,4 +145,6 @@ private[spark] abstract class ExternalBlockManager {
   def removeGlobalFiles(operatorId: Int)
   //zengdan
   def listStatus(operatorId: Int): List[ClientFileInfo]
+
+  def getLocations(operatorID: Int): List[String]
 }

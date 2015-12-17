@@ -133,6 +133,18 @@
     <orderEntry type="library" name="Maven: org.apache.curator:curator-client:2.4.0" level="project" />
     <orderEntry type="library" name="Maven: org.tachyonproject:tachyon-underfs-hdfs:0.7.1" level="project" />
     <orderEntry type="library" name="Maven: org.tachyonproject:tachyon-underfs-local:0.7.1" level="project" />
+    <orderEntry type="library" name="Maven: org.tachyonproject:tachyon-servers:0.7.1" level="project" />
+    <orderEntry type="library" name="Maven: org.tachyonproject:tachyon-client-unshaded:0.7.1" level="project" />
+    <orderEntry type="library" name="Maven: org.tachyonproject:tachyon-common:0.7.1" level="project" />
+    <orderEntry type="library" name="Maven: org.apache.thrift:libthrift:0.9.2" level="project" />
+    <orderEntry type="library" name="Maven: org.eclipse.jetty:jetty-jsp:7.6.15.v20140411" level="project" />
+    <orderEntry type="library" name="Maven: org.eclipse.jetty.orbit:javax.servlet.jsp:2.1.0.v201105211820" level="project" />
+    <orderEntry type="library" name="Maven: org.eclipse.jetty.orbit:org.apache.jasper.glassfish:2.1.0.v201110031002" level="project" />
+    <orderEntry type="library" name="Maven: org.eclipse.jetty.orbit:javax.servlet.jsp.jstl:1.2.0.v201105211821" level="project" />
+    <orderEntry type="library" name="Maven: org.eclipse.jetty.orbit:org.apache.taglibs.standard.glassfish:1.2.0.v201112081803" level="project" />
+    <orderEntry type="library" name="Maven: org.eclipse.jetty.orbit:javax.el:2.1.0.v201105211819" level="project" />
+    <orderEntry type="library" name="Maven: org.eclipse.jetty.orbit:com.sun.el:1.0.0.v201105211818" level="project" />
+    <orderEntry type="library" name="Maven: org.eclipse.jetty.orbit:org.eclipse.jdt.core:3.7.1" level="project" />
     <orderEntry type="library" name="Maven: net.razorvine:pyrolite:4.4" level="project" />
     <orderEntry type="library" name="Maven: net.sf.py4j:py4j:0.8.2.1" level="project" />
     <orderEntry type="module" module-name="spark-core_2.10" scope="TEST" production-on-test="" />
@@ -177,8 +189,8 @@
     <orderEntry type="library" scope="PROVIDED" name="Maven: org.eclipse.jetty:jetty-server:8.1.14.v20131031" level="project" />
     <orderEntry type="library" scope="PROVIDED" name="Maven: org.eclipse.jetty:jetty-plus:8.1.14.v20131031" level="project" />
     <orderEntry type="library" scope="PROVIDED" name="Maven: org.eclipse.jetty.orbit:javax.transaction:1.1.1.v201105210645" level="project" />
-    <orderEntry type="library" scope="PROVIDED" name="Maven: org.eclipse.jetty:jetty-webapp:8.1.14.v20131031" level="project" />
-    <orderEntry type="library" scope="PROVIDED" name="Maven: org.eclipse.jetty:jetty-xml:8.1.14.v20131031" level="project" />
+    <orderEntry type="library" name="Maven: org.eclipse.jetty:jetty-webapp:8.1.14.v20131031" level="project" />
+    <orderEntry type="library" name="Maven: org.eclipse.jetty:jetty-xml:8.1.14.v20131031" level="project" />
     <orderEntry type="library" scope="PROVIDED" name="Maven: org.eclipse.jetty:jetty-jndi:8.1.14.v20131031" level="project" />
     <orderEntry type="library" scope="PROVIDED" name="Maven: org.eclipse.jetty.orbit:javax.mail.glassfish:1.4.1.v201005082020" level="project" />
     <orderEntry type="library" scope="PROVIDED" name="Maven: org.eclipse.jetty.orbit:javax.activation:1.1.0.v201105071233" level="project" />

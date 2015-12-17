@@ -102,6 +102,12 @@ private[spark] class TachyonBlockManager() extends ExternalBlockManager with Log
     client.listStatus(filePath)
   }
 
+  def getLocations(operatorID: Int): List[String] = {
+    val root = SparkEnv.get.conf.get("spark.tachyonStore.global.baseDir", "/global_spark_tachyon")
+    val filePath = new TachyonURI(s"$root/${operatorID}")
+    client.getFile(filePath).getLocationHosts
+  }
+
   //zengdan
   private lazy val tachyonGlobalDirs:Array[TachyonFile] = {
     val path = new TachyonURI(blockManager.conf.get("spark.tachyonStore.global.baseDir",
@@ -189,10 +195,11 @@ private[spark] class TachyonBlockManager() extends ExternalBlockManager with Log
 
   override def putBytes(blockId: BlockId, bytes: ByteBuffer): Unit = {
     val file = getFile(blockId)
-    //val os = file.getOutStream(WriteType.TRY_CACHE)
+    val os = file.getOutStream(WriteType.TRY_CACHE)
 
     //zengdan
-    val writeType = SparkEnv.get.conf.get("spark.storage.tachyon.write.type", "TRY_CACHE")
+    /*
+    val writeType = SparkEnv.get.conf.get("spark.storage.tachyon.write.type", "CACHE_THROUGH")
     val os = writeType match {
       case "TRY_CACHE" => file.getOutStream(WriteType.TRY_CACHE)
       case "MUST_CACHE" => file.getOutStream(WriteType.MUST_CACHE)
@@ -200,6 +207,7 @@ private[spark] class TachyonBlockManager() extends ExternalBlockManager with Log
       case "THROUGH" => file.getOutStream(WriteType.THROUGH)
       case "ASYNC_THROUGH" => file.getOutStream(WriteType.ASYNC_THROUGH)
     }
+    */
 
     try {
       os.write(bytes.array())
@@ -251,10 +259,52 @@ private[spark] class TachyonBlockManager() extends ExternalBlockManager with Log
     if (file == null || file.getLocationHosts().size() == 0) {
       return None
     }
+    ///*
+    //old version
     val is = file.getInStream(ReadType.CACHE)
     Option(is).map { is =>
       blockManager.dataDeserializeStream(blockId, is)
     }
+    //*/
+    /*
+    //zengdan
+    if(file.isInMemory) {
+      val is = file.getInStream(ReadType.CACHE)
+      Option(is).map { is =>
+        blockManager.dataDeserializeStream(blockId, is)
+      }
+    }else{
+      //recalculate the benefit => how??  communicate with the master
+      //return whether to store it in memory
+      if(true){
+        //first read it from disk
+        val is = file.getInStream(ReadType.CACHE)
+        val values = Option(is).map { is =>
+          blockManager.dataDeserializeStream(blockId, is)
+        }
+
+        //then write it to memory
+        val os = file.getOutStream(WriteType.TRY_CACHE)
+        try {
+          blockManager.dataSerializeStream(blockId, os, values.get)
+        } catch {
+          case NonFatal(e) =>
+            logWarning(s"Failed to put values of block $blockId into Tachyon", e)
+            os.cancel()
+        } finally {
+          os.close()
+        }
+        values
+      }else{
+        //need to modify, read from disk directly
+        val is = file.getInStream(ReadType.CACHE)
+        val values = Option(is).map { is =>
+          blockManager.dataDeserializeStream(blockId, is)
+        }
+        values
+      }
+    }
+    */
   }
 
   override def getSize(blockId: BlockId): Long = {
