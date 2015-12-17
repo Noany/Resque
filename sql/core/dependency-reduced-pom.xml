@@ -37,66 +37,6 @@
   </build>
   <dependencies>
     <dependency>
-      <groupId>org.tachyonproject</groupId>
-      <artifactId>tachyon-client</artifactId>
-      <version>0.7.1</version>
-      <scope>compile</scope>
-      <exclusions>
-        <exclusion>
-          <artifactId>hadoop-client</artifactId>
-          <groupId>org.apache.hadoop</groupId>
-        </exclusion>
-        <exclusion>
-          <artifactId>curator-recipes</artifactId>
-          <groupId>org.apache.curator</groupId>
-        </exclusion>
-        <exclusion>
-          <artifactId>tachyon-underfs-glusterfs</artifactId>
-          <groupId>org.tachyonproject</groupId>
-        </exclusion>
-        <exclusion>
-          <artifactId>tachyon-underfs-s3</artifactId>
-          <groupId>org.tachyonproject</groupId>
-        </exclusion>
-        <exclusion>
-          <artifactId>guava</artifactId>
-          <groupId>com.google.guava</groupId>
-        </exclusion>
-      </exclusions>
-    </dependency>
-    <dependency>
-      <groupId>org.tachyonproject</groupId>
-      <artifactId>tachyon-servers</artifactId>
-      <version>0.7.1</version>
-      <scope>compile</scope>
-      <exclusions>
-        <exclusion>
-          <artifactId>hadoop-client</artifactId>
-          <groupId>org.apache.hadoop</groupId>
-        </exclusion>
-        <exclusion>
-          <artifactId>curator-recipes</artifactId>
-          <groupId>org.apache.curator</groupId>
-        </exclusion>
-        <exclusion>
-          <artifactId>tachyon-underfs-glusterfs</artifactId>
-          <groupId>org.tachyonproject</groupId>
-        </exclusion>
-        <exclusion>
-          <artifactId>tachyon-underfs-s3</artifactId>
-          <groupId>org.tachyonproject</groupId>
-        </exclusion>
-        <exclusion>
-          <artifactId>jetty-server</artifactId>
-          <groupId>org.eclipse.jetty</groupId>
-        </exclusion>
-        <exclusion>
-          <artifactId>jetty-servlet</artifactId>
-          <groupId>org.eclipse.jetty</groupId>
-        </exclusion>
-      </exclusions>
-    </dependency>
-    <dependency>
       <groupId>org.apache.spark</groupId>
       <artifactId>spark-core_2.10</artifactId>
       <version>1.5.1</version>
@@ -115,15 +55,15 @@
           <groupId>org.eclipse.jetty</groupId>
         </exclusion>
         <exclusion>
+          <artifactId>jetty-server</artifactId>
+          <groupId>org.eclipse.jetty</groupId>
+        </exclusion>
+        <exclusion>
           <artifactId>jetty-http</artifactId>
           <groupId>org.eclipse.jetty</groupId>
         </exclusion>
         <exclusion>
           <artifactId>jetty-continuation</artifactId>
-          <groupId>org.eclipse.jetty</groupId>
-        </exclusion>
-        <exclusion>
-          <artifactId>jetty-server</artifactId>
           <groupId>org.eclipse.jetty</groupId>
         </exclusion>
         <exclusion>
@@ -152,15 +92,15 @@
           <groupId>org.eclipse.jetty</groupId>
         </exclusion>
         <exclusion>
+          <artifactId>jetty-server</artifactId>
+          <groupId>org.eclipse.jetty</groupId>
+        </exclusion>
+        <exclusion>
           <artifactId>jetty-http</artifactId>
           <groupId>org.eclipse.jetty</groupId>
         </exclusion>
         <exclusion>
           <artifactId>jetty-continuation</artifactId>
-          <groupId>org.eclipse.jetty</groupId>
-        </exclusion>
-        <exclusion>
-          <artifactId>jetty-server</artifactId>
           <groupId>org.eclipse.jetty</groupId>
         </exclusion>
         <exclusion>

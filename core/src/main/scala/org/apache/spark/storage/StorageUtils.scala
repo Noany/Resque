@@ -90,7 +90,7 @@ class StorageStatus(val blockManagerId: BlockManagerId, val maxMem: Long) {
   private[spark] def addBlock(blockId: BlockId, blockStatus: BlockStatus): Unit = {
     updateStorageInfo(blockId, blockStatus)
     blockId match {
-      case RDDBlockId(rddId, _, _) =>  //zengdan
+      case RDDBlockId(rddId, _) =>
         _rddBlocks.getOrElseUpdate(rddId, new mutable.HashMap)(blockId) = blockStatus
       case _ =>
         _nonRddBlocks(blockId) = blockStatus
@@ -106,7 +106,7 @@ class StorageStatus(val blockManagerId: BlockManagerId, val maxMem: Long) {
   private[spark] def removeBlock(blockId: BlockId): Option[BlockStatus] = {
     updateStorageInfo(blockId, BlockStatus.empty)
     blockId match {
-      case RDDBlockId(rddId, _, _) => //zengdan
+      case RDDBlockId(rddId, _) =>
         // Actually remove the block, if it exists
         if (_rddBlocks.contains(rddId)) {
           val removed = _rddBlocks(rddId).remove(blockId)
@@ -129,7 +129,7 @@ class StorageStatus(val blockManagerId: BlockManagerId, val maxMem: Long) {
    */
   def containsBlock(blockId: BlockId): Boolean = {
     blockId match {
-      case RDDBlockId(rddId, _, _) =>  //zengdan
+      case RDDBlockId(rddId, _) =>
         _rddBlocks.get(rddId).exists(_.contains(blockId))
       case _ =>
         _nonRddBlocks.contains(blockId)
@@ -142,7 +142,7 @@ class StorageStatus(val blockManagerId: BlockManagerId, val maxMem: Long) {
    */
   def getBlock(blockId: BlockId): Option[BlockStatus] = {
     blockId match {
-      case RDDBlockId(rddId, _, _) =>  //zengdan
+      case RDDBlockId(rddId, _) =>
         _rddBlocks.get(rddId).map(_.get(blockId)).flatten
       case _ =>
         _nonRddBlocks.get(blockId)
@@ -205,7 +205,7 @@ class StorageStatus(val blockManagerId: BlockManagerId, val maxMem: Long) {
 
     // Compute new info from old info
     val (oldMem, oldDisk, oldExternalBlockStore) = blockId match {
-      case RDDBlockId(rddId, _, _) => //zengdan
+      case RDDBlockId(rddId, _) =>
         _rddStorageInfo.get(rddId)
           .map { case (mem, disk, externalBlockStore, _) => (mem, disk, externalBlockStore) }
           .getOrElse((0L, 0L, 0L))
@@ -218,7 +218,7 @@ class StorageStatus(val blockManagerId: BlockManagerId, val maxMem: Long) {
 
     // Set the correct info
     blockId match {
-      case RDDBlockId(rddId, _, _) => //zengdan
+      case RDDBlockId(rddId, _) =>
         // If this RDD is no longer persisted, remove it
         if (newMem + newDisk + newExternalBlockStore == 0) {
           _rddStorageInfo.remove(rddId)

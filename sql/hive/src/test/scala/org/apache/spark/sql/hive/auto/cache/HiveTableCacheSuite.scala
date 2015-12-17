@@ -18,7 +18,6 @@ class HiveTableCacheSuite extends FunSuite with Logging{
   //System.setProperty("spark.sql.shuffle.partitions","1")
   System.setProperty("hive.metastore.warehouse.dir", "/Users/zengdan/hive")
   System.setProperty("spark.tachyonStore.global.baseDir","/global_spark_tachyon")
-  System.setProperty("spark.externalBlockStore.blockManager", "org.apache.spark.storage.ReuseBlockManager")
   val conf = new SparkConf()
   conf.setAppName("TPCH").setMaster("local")
   //conf.set("spark.sql.shuffle.partitions","1")
@@ -32,21 +31,19 @@ class HiveTableCacheSuite extends FunSuite with Logging{
     }
   }.start()
 
-  val iter = 4
+  val iter = 1
   val collect = false
 
   test("TPCH Q1"){
-    //QGMaster.main("--host localhost --port 7070".split(" "))
 
-    for(i <- 1 to 1) {
-      for (query <- 1 to 2) {
+    for(i <- 1 to 3) {
+      for (query <- 1 to 22) {
         logInfo(s"=======query $query=======")
         val q = query
         this.getClass.getMethod("executeQ" + q, Array.empty[Class[_]]: _*).invoke(this, Array.empty[Object]: _*)
         println(s"=======query $query=======")
       }
     }
-
   }
 
   def executeQ0()={
@@ -250,10 +247,6 @@ class HiveTableCacheSuite extends FunSuite with Logging{
                                 from supplier,lineitem,orders,customer,nation n1,nation n2
                                 where s_suppkey = l_suppkey and o_orderkey = l_orderkey and c_custkey = o_custkey and s_nationkey = n1.n_nationkey and c_nationkey = n2.n_nationkey and ((n1.n_name = 'KENYA' and n2.n_name = 'PERU')or (n1.n_name = 'PERU' and n2.n_name = 'KENYA')) and l_shipdate between '1995-01-01' and '1996-12-31') as shipping
                                 group by supp_nation,cust_nation,l_year""")
-      val res1 = sqlContext.sql("""select n1.n_name as supp_nation, year(l_shipdate) as l_year,l_extendedprice * (1 - l_discount) as volume
-                                from supplier,lineitem,orders,customer,nation n1
-                                where s_suppkey = l_suppkey and o_orderkey = l_orderkey and c_custkey = o_custkey and s_nationkey = n1.n_nationkey  and l_shipdate between '1995-01-01' and '1996-12-31'
-                                """)
       //order by supp_nation,cust_nation,l_year"""
 
       if(collect) {

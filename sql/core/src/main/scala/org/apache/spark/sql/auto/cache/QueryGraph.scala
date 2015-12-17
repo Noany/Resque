@@ -5,33 +5,20 @@ package org.apache.spark.sql.auto.cache
  */
 
 //import java.util.HashMap
-
-import java.io.IOException
-import java.nio.{ByteOrder, ByteBuffer}
-import java.util
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 
 import org.apache.spark.sql.SQLContext
-import org.apache.spark.sql.auto.cache.QGMaster._
 import org.apache.spark.sql.auto.cache.QGUtils.{NodeDesc, PlanUpdate}
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression}
 import org.apache.spark.sql.catalyst.plans.logical.{LogicalPlan}
 import org.apache.spark.sql.execution.QNodeRef
 import org.apache.spark.sql.columnar.{InMemoryColumnarTableScan, InMemoryRelation}
 import org.apache.spark.sql.execution._
-import org.apache.spark.storage.{ExternalBlockStore, TachyonBlockManager}
-import org.apache.spark.util.SignalLogger
-import org.apache.spark.{Logging, SparkConf, SparkContext}
-import tachyon.TachyonURI
-import tachyon.conf.TachyonConf
-import tachyon.util.CommonUtils
+import org.apache.spark.storage.TachyonBlockManager
+import org.apache.spark.{SparkConf, SparkContext}
 
 import scala.collection.mutable.{ArrayBuffer, Map, HashMap}
-
-import tachyon.client.{WriteType, OutStream, TachyonFile, TachyonFS}
-
-
 
 object QueryNode{
   var counter = new AtomicInteger(0)
@@ -64,7 +51,7 @@ class QueryNode(plan: SparkPlan) {
 
 }
 
-class QueryGraph(conf: SparkConf){
+class QueryGraph{
 
   /*
    * TODO: parents synchronized
@@ -75,31 +62,10 @@ class QueryGraph(conf: SparkConf){
   var maxBenefit = Double.MinValue
   var maxPlan: ArrayBuffer[SparkPlan] = new ArrayBuffer[SparkPlan]()
 
-  val memThreshold = conf.get("spark.sql.reuse.memory.benefit.threshold", "0").toInt
-  val diskThreshold = conf.get("spark.sql.reuse.disk.benefit.threshold", "0").toInt
-
-  var client: tachyon.client.TachyonFS = _
-
-  val master = conf.get(ExternalBlockStore.MASTER_URL, "tachyon://localhost:19998")
-  client = if (master != null && master != "") {
-    val tachyonConf = new TachyonConf()
-    tachyonConf.set("tachyon.user.quota.unit.bytes", "536870912")
-    TachyonFS.get(new TachyonURI(master), tachyonConf)
-  } else {
-    null
-  }
-  // original implementation call System.exit, we change it to run without extblkstore support
-  if (client == null) {
-    throw new IOException("Failed to connect to the Tachyon as the master " +
-      "address is not configured")
-  }
-
-  val rootPath = conf.get("spark.tachyonStore.global.baseDir" , "/global_spark_tachyon")
-
   /*
    * TODO: cut Graph to save space
    */
-  def cutGraph() {
+  def cutGraph(){
 
   }
 
@@ -159,12 +125,6 @@ class QueryGraph(conf: SparkConf){
   */
 
   def getBenefit(node: QueryNode): Double = if(node.stats(2) > 0){
-    node.stats(0)*node.stats(1)*1.0/node.stats(2)
-  }else{
-    0.0
-  }
-
-  def getBenefit(node: QueryNode, mem: Boolean): Double = if(node.stats(2) > 0){
     node.stats(0)*node.stats(1)*1.0/node.stats(2)
   }else{
     0.0
@@ -388,106 +348,12 @@ class QueryGraph(conf: SparkConf){
         refNode.get.stats(2) = value(1)  //update size
       }
     }
-
-    ///*
-    var cachedBenefits = scala.collection.Map[String, java.lang.Double]()
-    for ((id, node) <- nodes) {
-      val path = rootPath + "/" + id
-      if (node.cached ) {
-        if(client.exist(new TachyonURI(path)))
-          cachedBenefits += (path -> getBenefit(node))
-      }
-    }
-    //*/
-
-    import scala.collection.JavaConversions._
-
-    if (!cachedBenefits.isEmpty) {
-      client.qgmaster_setBenefit(mapAsJavaMap(cachedBenefits))
-    }
     QueryGraph.printResult(this)
-  }
-
-  def changeToMemory(id: Int) : Boolean = {
-    if(nodes.get(id).isDefined && getBenefit(nodes.get(id).get, true) > memThreshold){
-      true
-    }else{
-      false
-    }
-  }
-
-  def getBenefit(id: Int) : Double = {
-    if(nodes.get(id).isDefined){
-      getBenefit(nodes.get(id).get)
-    }else{
-      throw new Exception("Get the benefit of non-exisiting node")
-    }
   }
 }
 
-object  QueryGraph extends Logging{
-  var qg = new QueryGraph(new SparkConf)
-
-  def main(args: Array[String]) {
-
-    val tachyonClient = qg.client
-    val path1: TachyonURI = new TachyonURI("/global_spark_tachyon/1/operator_1_0")
-    if (!tachyonClient.exist(path1)) {
-      createFile(tachyonClient, path1)
-    }
-    writeFile(tachyonClient, path1, 1, 2.0)
-    //tachyonClient.qgmaster_setBenefit()
-
-    var cachedBenefits = scala.collection.Map[String, java.lang.Double]()
-    val rootPath = "/global_spark_tachyon/"
-    cachedBenefits += ((rootPath + "1") -> 2.0)
-
-    import scala.collection.JavaConversions._
-    tachyonClient.qgmaster_setBenefit(mapAsJavaMap(cachedBenefits))
-    Thread.sleep(20000)
-
-
-    val path2: TachyonURI = new TachyonURI("/global_spark_tachyon/2/operator_2_0")
-    if (!tachyonClient.exist(path2)) {
-      createFile(tachyonClient, path2)
-    }
-    writeFile(tachyonClient, path2, 2, 4.0)
-    cachedBenefits += ((rootPath + "2") -> 4.0)
-    tachyonClient.qgmaster_setBenefit(mapAsJavaMap(cachedBenefits))
-    Thread.sleep(20000)
-
-    //*/
-    val path3: TachyonURI = new TachyonURI("/global_spark_tachyon/3/operator_3_0")
-    if (!tachyonClient.exist(path3)) {
-      createFile(tachyonClient, path3)
-    }
-    writeFile(tachyonClient, path3, 3, 3.0)
-    cachedBenefits += ((rootPath + "3") -> 3.0)
-    tachyonClient.qgmaster_setBenefit(mapAsJavaMap(cachedBenefits))
-  }
-
-  @throws(classOf[IOException])
-  private def createFile(tachyonClient: TachyonFS, path: TachyonURI) {
-    val startTimeMs: Long = CommonUtils.getCurrentMs
-    val fileId: Int = tachyonClient.createFile(path)
-  }
-
-  @throws(classOf[IOException])
-  private def writeFile(tachyonClient: TachyonFS, path: TachyonURI, id: Int, benefit: Double) {
-    val buf: ByteBuffer = ByteBuffer.allocate(20 * 4)
-    buf.order(ByteOrder.nativeOrder)
-    for (k <- 0 to 19) {
-      buf.putInt(k)
-    }
-
-    buf.flip
-    buf.flip
-    val startTimeMs: Long = CommonUtils.getCurrentMs
-    val file: TachyonFile = tachyonClient.getFile(path)
-    val os: OutStream = file.getOutStream(WriteType.TRY_CACHE, buf.array.length, id, 0, benefit)
-    os.write(buf.array)
-    os.close
-  }
+object  QueryGraph{
+  val qg = new QueryGraph
 
   def printResult(graph: QueryGraph){
     /*

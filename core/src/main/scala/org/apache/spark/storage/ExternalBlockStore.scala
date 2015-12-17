@@ -156,17 +156,6 @@ private[spark] class ExternalBlockStore(blockManager: BlockManager, executorId: 
     }
   }
 
-  //zengdan
-  def loadValues(blockId: BlockId): Option[Iterator[Any]] = {
-    try {
-      externalBlockManager.flatMap(_.loadValues(blockId))
-    } catch {
-      case NonFatal(t) =>
-        logError(s"Error in getValues($blockId)", t)
-        None
-    }
-  }
-
   override def getBytes(blockId: BlockId): Option[ByteBuffer] = {
     try {
       externalBlockManager.flatMap(_.getBytes(blockId))
@@ -253,18 +242,6 @@ private[spark] class ExternalBlockStore(blockManager: BlockManager, executorId: 
     } catch {
       case NonFatal(t) =>
         logError(s"Error in getBytes($operatorId)", t)
-        new util.ArrayList()
-    }
-  }
-
-  //zengdan
-  def getLocations(operatorId: Int): List[String] = {
-    try {
-      externalBlockManager.map(_.getLocations(operatorId)).
-        getOrElse(new util.ArrayList[String]())
-    } catch {
-      case NonFatal(t) =>
-        logError(s"Error in getLocations($operatorId)", t)
         new util.ArrayList()
     }
   }
