@@ -25,16 +25,25 @@ class TachyonRDD [T: ClassTag](sc: SparkContext, operatorId: Int)
     val ps = new Array[Partition](files.size())
     var i = 0
     while(i < files.size()){
-      ps(i) = new TachyonPartition(files.get(i).name.split("_").last.toInt)
+      val index = files.get(i).name.split("_").last.toInt
+      ps(index) = new TachyonPartition(index)
       i += 1
     }
     ps
   }
 
+  override def getPreferredLocations(split: Partition): Seq[String] = {
+    //val hsplit = split.asInstanceOf[HadoopPartition].inputSplit.value
+    //val locs = new Seq[String](3)
+    //externalBlockStore.getLocations(split.index).
+    Seq.empty[String]
+  }
+
   override def compute(split: Partition, context: TaskContext) = {
     val fileName = "operator_" + operatorId + "_" + split.index
     logInfo("Input Split: " + fileName)
-    externalBlockStore.getValues(new RDDBlockId(operatorId, split.index, Some(operatorId)))
+    //considering for restoring it into memory because of benefit increase
+    externalBlockStore.loadValues(new RDDBlockId(operatorId, split.index, Some(operatorId)))
       .getOrElse(Iterator.empty).asInstanceOf[Iterator[T]]
   }
 }
