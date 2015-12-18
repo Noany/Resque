@@ -286,7 +286,7 @@
         </exclusion>
       </exclusions>
     </dependency>
-    <dependency>
+    <!--dependency>
     <groupId>org.tachyonproject</groupId>
     <artifactId>tachyon-servers</artifactId>
     <version>0.7.1</version>
@@ -308,7 +308,7 @@
         <artifactId>tachyon-underfs-s3</artifactId>
       </exclusion>
     </exclusions>
-    </dependency>
+    </dependency-->
     <dependency>
       <groupId>org.seleniumhq.selenium</groupId>
       <artifactId>selenium-java</artifactId>
