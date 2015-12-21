@@ -57,9 +57,9 @@ private[spark] class ReuseBlockManager() extends ExternalBlockManager with Loggi
   }
 
   //zengdan
-  def getLocations(operatorID: Int): List[String] = {
+  def getLocations(operatorID: Int, index: Int): List[String] = {
     val root = SparkEnv.get.conf.get("spark.tachyonStore.global.baseDir", "/global_spark_tachyon")
-    val filePath = new TachyonURI(s"$root/${operatorID}")
+    val filePath = new TachyonURI(s"$root/${operatorID}/operator_${operatorID}_${index}")
     client.getFile(filePath).getLocationHosts
   }
 
@@ -167,17 +167,15 @@ private[spark] class ReuseBlockManager() extends ExternalBlockManager with Loggi
   override def toString: String = {"ExternalBlockStore-Tachyon"}
 
   override def removeBlock(blockId: BlockId): Boolean = {
-    val file = getFile(blockId)
-    if (fileExists(file)) {
-      removeFile(file)
+    if (fileExists(blockId)) {
+      client.delete(new TachyonURI(getFile(blockId).getPath()), false)
     } else {
       false
     }
   }
 
   override def blockExists(blockId: BlockId): Boolean = {
-    val file = getFile(blockId)
-    fileExists(file)
+    fileExists(blockId)
   }
 
   override def putBytes(blockId: BlockId, bytes: ByteBuffer): Unit = {
@@ -191,12 +189,14 @@ private[spark] class ReuseBlockManager() extends ExternalBlockManager with Loggi
     idToBenefit.put(id, benefit)
     //val os = file.getOutStream(WriteType.TRY_CACHE)
     val os: OutStream = try {
-      file.getOutStream(WriteType.TRY_CACHE, bytes.array().size, id, index, benefit)
+      //file.getOutStream(WriteType.TRY_CACHE, bytes.array().size, id, index, benefit)
+      throw new IOException("Failed to free Space")
     } catch {
       case e : IOException =>
         logWarning(s"Failed to put bytes of block into Tachyon because of getOutStream")
         logError(e.getMessage)
-        return
+        throw e
+        //return
     }
 
 
@@ -369,13 +369,7 @@ private[spark] class ReuseBlockManager() extends ExternalBlockManager with Loggi
     getFile(blockId.name).length
   }
 
-  def removeFile(file: TachyonFile): Boolean = {
-    client.delete(new TachyonURI(file.getPath()), false)
-  }
 
-  def fileExists(file: TachyonFile): Boolean = {
-    client.exist(new TachyonURI(file.getPath()))
-  }
 
   //zengdan
   def getFile(filename:String, dirs: Array[TachyonFile], subs: Array[Array[TachyonFile]]): TachyonFile = {
@@ -393,7 +387,7 @@ private[spark] class ReuseBlockManager() extends ExternalBlockManager with Loggi
         if (old != null) {
           old
         } else {
-          val path = new TachyonURI(dirs(dirId) + "/" + "%02x".format(subDirId))
+          val path = new TachyonURI(dirs(dirId).getPath + "/" + "%02x".format(subDirId))
           client.mkdir(path)
           val newDir = client.getFile(path)
           subs(dirId)(subDirId) = newDir
@@ -475,6 +469,52 @@ private[spark] class ReuseBlockManager() extends ExternalBlockManager with Loggi
   }
 
   def getFile(blockId: BlockId): TachyonFile = getFile(blockId.name)
+
+  def fileExists(blockId: BlockId): Boolean = {
+    //zengdan
+    // Figure out which tachyon directory it hashes to, and which subdirectory in that
+    blockId.name.split("_")(0) match {
+
+      case "operator" =>
+        fileExists(blockId.name, tachyonGlobalDirs)
+      case _ =>
+        fileExists(blockId.name, tachyonDirs, subDirs) //original  zengdan
+    }
+  }
+
+  //zengdan
+  def fileExists(filename:String, dirs: Array[TachyonFile], subs: Array[Array[TachyonFile]]) = {
+    //filename is identified by plan.id_partition.id
+    //return subs(dirId)(subDirId)/filename
+    val hash = Utils.nonNegativeHash(filename)
+    val dirId = hash % dirs.length
+    val subDirId = (hash / dirs.length) % subDirsPerTachyonDir
+
+    // Create the subdirectory if it doesn't already exist
+    val subDir = subs(dirId)(subDirId)
+    if (subDir == null) {
+      false
+    } else {
+      val filePath = new TachyonURI(subDir + "/" + filename)
+      client.exist(filePath) && client.getFile(filePath).isComplete
+    }
+  }
+
+  //zengdan
+  def fileExists(filename:String, dirs: Array[TachyonFile]) = {
+    //filename is identified by plan.id_partition.id
+    //return subs(dirId)(subDirId)/filename
+    val hash = Utils.nonNegativeHash(filename)
+    val dirId = hash % dirs.length
+
+    val operatorId = filename.split("_")(1)
+    if (dirs(dirId) == null) {
+      false
+    } else {
+      val filePath = new TachyonURI(dirs(dirId).getPath + "/" + operatorId + "/" + filename)
+      client.exist(filePath) && client.getFile(filePath).isComplete
+    }
+  }
 
   // TODO: Some of the logic here could be consolidated/de-duplicated with that in the DiskStore.
   private def createTachyonDirs(): Array[TachyonFile] = {

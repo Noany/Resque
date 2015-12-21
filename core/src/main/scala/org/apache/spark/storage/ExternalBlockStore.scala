@@ -258,9 +258,9 @@ private[spark] class ExternalBlockStore(blockManager: BlockManager, executorId: 
   }
 
   //zengdan
-  def getLocations(operatorId: Int): List[String] = {
+  def getLocations(operatorId: Int, index: Int): List[String] = {
     try {
-      externalBlockManager.map(_.getLocations(operatorId)).
+      externalBlockManager.map(_.getLocations(operatorId, index)).
         getOrElse(new util.ArrayList[String]())
     } catch {
       case NonFatal(t) =>

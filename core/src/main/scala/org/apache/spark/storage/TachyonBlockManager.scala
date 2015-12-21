@@ -102,9 +102,10 @@ private[spark] class TachyonBlockManager() extends ExternalBlockManager with Log
     client.listStatus(filePath)
   }
 
-  def getLocations(operatorID: Int): List[String] = {
+  //zengdan
+  def getLocations(operatorID: Int, index: Int): List[String] = {
     val root = SparkEnv.get.conf.get("spark.tachyonStore.global.baseDir", "/global_spark_tachyon")
-    val filePath = new TachyonURI(s"$root/${operatorID}")
+    val filePath = new TachyonURI(s"$root/${operatorID}/operator_${operatorID}_${index}")
     client.getFile(filePath).getLocationHosts
   }
 

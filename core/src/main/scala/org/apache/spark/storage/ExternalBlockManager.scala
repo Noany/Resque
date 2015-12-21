@@ -146,5 +146,5 @@ private[spark] abstract class ExternalBlockManager {
   //zengdan
   def listStatus(operatorId: Int): List[ClientFileInfo]
 
-  def getLocations(operatorID: Int): List[String]
+  def getLocations(operatorID: Int, index: Int): List[String]
 }

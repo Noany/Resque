@@ -19,6 +19,7 @@ private[spark] class TachyonPartition(idx: Int)
 class TachyonRDD [T: ClassTag](sc: SparkContext, operatorId: Int)
   extends ExternalStoreRDD[T](sc, operatorId){
 
+  //val backupRDD: RDD = _
 
   override def getPartitions: Array[Partition] = {
     val files: List[ClientFileInfo] = externalBlockStore.listStatus(operatorId)
@@ -30,13 +31,34 @@ class TachyonRDD [T: ClassTag](sc: SparkContext, operatorId: Int)
       i += 1
     }
     ps
+    /*
+    var complete = true
+    while(complete && i < files.size()){
+      val index = files.get(i).name.split("_").last.toInt
+      ps(index) = new TachyonPartition(index)
+      i += 1
+      if (!files.get(i).isIsComplete) {
+        complete = false
+      }
+    }
+
+    if (complete) {
+      ps
+    } else {
+      backupRDD.getPartitions
+    }
+    //ps
+    */
   }
 
   override def getPreferredLocations(split: Partition): Seq[String] = {
     //val hsplit = split.asInstanceOf[HadoopPartition].inputSplit.value
     //val locs = new Seq[String](3)
-    //externalBlockStore.getLocations(split.index).
-    Seq.empty[String]
+    //val fileName = "operator_" + operatorId + "_" + split.index
+    import scala.collection.JavaConversions.asScalaBuffer
+    val ret = externalBlockStore.getLocations(operatorId, split.index).toSeq
+    //println("Locations for file " + fileName + " is " + ret.mkString(","))
+    ret
   }
 
   override def compute(split: Partition, context: TaskContext) = {

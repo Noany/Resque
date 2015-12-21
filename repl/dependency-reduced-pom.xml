@@ -191,6 +191,10 @@
           <groupId>org.eclipse.jetty.orbit</groupId>
         </exclusion>
         <exclusion>
+          <artifactId>jetty-webapp</artifactId>
+          <groupId>org.eclipse.jetty</groupId>
+        </exclusion>
+        <exclusion>
           <artifactId>jetty-jndi</artifactId>
           <groupId>org.eclipse.jetty</groupId>
         </exclusion>

@@ -211,10 +211,6 @@
           <groupId>org.tachyonproject</groupId>
         </exclusion>
         <exclusion>
-          <artifactId>tachyon-servers</artifactId>
-          <groupId>org.tachyonproject</groupId>
-        </exclusion>
-        <exclusion>
           <artifactId>pyrolite</artifactId>
           <groupId>net.razorvine</groupId>
         </exclusion>

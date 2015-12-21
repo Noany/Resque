@@ -39,7 +39,7 @@ class HiveTableCacheSuite extends FunSuite with Logging{
     //QGMaster.main("--host localhost --port 7070".split(" "))
 
     for(i <- 1 to 1) {
-      for (query <- 1 to 2) {
+      for (query <- 1 to 1) {
         logInfo(s"=======query $query=======")
         val q = query
         this.getClass.getMethod("executeQ" + q, Array.empty[Class[_]]: _*).invoke(this, Array.empty[Object]: _*)
