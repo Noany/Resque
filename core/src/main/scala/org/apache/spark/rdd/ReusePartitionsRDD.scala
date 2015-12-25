@@ -18,7 +18,8 @@ class ReusePartitionsRDD[U: ClassTag, T: ClassTag](tachyonRdd: RDD[T],
   extends RDD[U](tachyonRdd.sparkContext, Nil){
   //this.persist(StorageLevel.OFF_HEAP)
 
-  val tachyonPartitions = new Array[Partition](backupRDD.partitions.size)
+  //val tachyonPartitions = new Array[Partition](backupRDD.partitions.size)
+  val tachyonPartitions = new Array[Boolean](backupRDD.partitions.size)
 
   override def getPartitions: Array[Partition] = {
     val tP = tachyonRdd.partitions
@@ -27,7 +28,7 @@ class ReusePartitionsRDD[U: ClassTag, T: ClassTag](tachyonRdd: RDD[T],
     while (i < tP.size) {
       if (null != tP(i)) {
         ps(tP(i).index) = tP(i)
-        tachyonPartitions(tP(i).index) = tP(i)
+        tachyonPartitions(tP(i).index) = true
       }
       i += 1
     }
@@ -35,10 +36,10 @@ class ReusePartitionsRDD[U: ClassTag, T: ClassTag](tachyonRdd: RDD[T],
   }
 
   override def getPreferredLocations(split: Partition): Seq[String] = {
-    if (null == tachyonPartitions(split.index)) {
-      backupRDD.preferredLocations(split)
-    } else {
+    if (tachyonPartitions(split.index)) {
       tachyonRdd.preferredLocations(split)
+    } else {
+      backupRDD.preferredLocations(split)
     }
     /*
     if (split.isInstanceOf[TachyonPartition]) {
@@ -57,10 +58,10 @@ class ReusePartitionsRDD[U: ClassTag, T: ClassTag](tachyonRdd: RDD[T],
       backupRDD.compute(split, context)
     }
     */
-    if (null == tachyonPartitions(split.index)) {
-      backupRDD.compute(split, context)
-    } else {
+    if (tachyonPartitions(split.index)) {
       f(context, split.index, tachyonRdd.compute(split, context))
+    } else {
+      backupRDD.compute(split, context)
     }
   }
 }
