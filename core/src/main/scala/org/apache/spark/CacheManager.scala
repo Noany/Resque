@@ -66,21 +66,34 @@ private[spark] class CacheManager(blockManager: BlockManager) extends Logging {
         // Otherwise, we have to load the partition ourselves
         try {
           logInfo(s"Partition $key not found, computing it")
-          val computedValues = rdd.computeOrReadCheckpoint(partition, context)
+          val computedValues = rdd.computeOrReadCheckpoint(partition, context).duplicate
+          val tryPutValues = computedValues._1
 
           // If the task is running locally, do not persist the result
           if (context.isRunningLocally) {
-            return computedValues
+            return tryPutValues
           }
 
           // Otherwise, cache the values and keep track of any updates in block statuses
           val updatedBlocks = new ArrayBuffer[(BlockId, BlockStatus)]
+          //zengdan
+          /*
           val cachedValues = putInBlockManager(key, computedValues, storageLevel, updatedBlocks)
           val metrics = context.taskMetrics
           val lastUpdatedBlocks = metrics.updatedBlocks.getOrElse(Seq[(BlockId, BlockStatus)]())
           metrics.updatedBlocks = Some(lastUpdatedBlocks ++ updatedBlocks.toSeq)
           new InterruptibleIterator(context, cachedValues)
-
+          */
+          try {
+            val cachedValues = putInBlockManager(key, tryPutValues, storageLevel, updatedBlocks)
+            val metrics = context.taskMetrics
+            val lastUpdatedBlocks = metrics.updatedBlocks.getOrElse(Seq[(BlockId, BlockStatus)]())
+            metrics.updatedBlocks = Some(lastUpdatedBlocks ++ updatedBlocks.toSeq)
+            new InterruptibleIterator(context, cachedValues)
+          } catch {
+            case _ :Exception =>
+              computedValues._2
+          }
         } finally {
           loading.synchronized {
             loading.remove(key)

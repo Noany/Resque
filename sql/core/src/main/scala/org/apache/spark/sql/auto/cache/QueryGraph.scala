@@ -175,8 +175,11 @@ class QueryGraph(conf: SparkConf){
     node.stats(0) += 1
     node.lastAccess = System.currentTimeMillis()
     //reuse stored data
-    if(node.cached && node.schema.isDefined) {
+    //zengdan test failure
+    if(node.cached) {
+      // && node.schema.isDefined
       plan.nodeRef.get.reuse = true
+      //plan.nodeRef.get.cache = true
     }
     //没有统计信息的暂不参与计算
     if(node.stats(2) > 0){

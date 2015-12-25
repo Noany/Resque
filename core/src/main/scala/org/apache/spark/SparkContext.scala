@@ -130,17 +130,17 @@ class SparkContext(config: SparkConf) extends Logging with ExecutorAllocationCli
   */
 
   //zengdan lazy
-  def loadCachedFile[U:ClassTag](operatorId: Int):(Option[(RDD[U])], Boolean) = {
+  def loadCachedFile[U:ClassTag](operatorId: Int):Option[(RDD[U])] = {
     val tachyonUrl = conf.get("spark.tachyonStore.url", "tachyon://localhost:19998")
     val rootPath = conf.get("spark.tachyonStore.global.baseDir", "/global_spark_tachyon")
     val path = tachyonUrl + rootPath + "/" + operatorId
     val tachyonStore = SparkEnv.get.blockManager.externalBlockStore
-    val exists = tachyonStore.checkGlobalExists(operatorId)
-    if(exists){
+    if(tachyonStore.checkGlobalExists(operatorId)){
       //(Some(reuseFile[U](path)), exists)
-      (Some(new TachyonRDD[U](this, operatorId)), exists)
+      val tachyonRdd = new TachyonRDD[U](this, operatorId)
+      Some(tachyonRdd)
     }else{
-      (None, exists)
+      None
     }
   }
 

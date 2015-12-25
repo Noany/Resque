@@ -1,7 +1,7 @@
 ----------------------------------------------------------------
-Mon Dec 21 11:56:12 CST 2015:
-Booting Derby version The Apache Software Foundation - Apache Derby - 10.10.1.1 - (1458268): instance a816c00e-0151-c2ae-2787-000012932a88 
-on database directory /Users/zengdan/spark-1.5.1/external/kafka-assembly/metastore_db with class loader org.apache.spark.sql.hive.client.IsolatedClientLoader$$anon$1@232cde6e 
+Thu Dec 24 10:07:49 CST 2015:
+Booting Derby version The Apache Software Foundation - Apache Derby - 10.10.1.1 - (1458268): instance a816c00e-0151-d1be-0347-00001354b750 
+on database directory /Users/zengdan/spark-1.5.1/external/kafka-assembly/metastore_db with class loader org.apache.spark.sql.hive.client.IsolatedClientLoader$$anon$1@949ad2f 
 Loaded from file:/Users/zengdan/.m2/repository/org/apache/derby/derby/10.10.1.1/derby-10.10.1.1.jar
 java.vendor=Oracle Corporation
 java.runtime.version=1.7.0_65-b17

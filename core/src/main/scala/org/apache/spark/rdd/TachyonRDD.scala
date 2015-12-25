@@ -2,7 +2,7 @@ package org.apache.spark.rdd
 
 import java.util.List
 
-import org.apache.spark.storage.RDDBlockId
+import org.apache.spark.storage.{StorageLevel, RDDBlockId}
 import org.apache.spark.{TaskContext, Partition, SparkEnv, SparkContext}
 import tachyon.thrift.ClientFileInfo
 
@@ -19,53 +19,79 @@ private[spark] class TachyonPartition(idx: Int)
 class TachyonRDD [T: ClassTag](sc: SparkContext, operatorId: Int)
   extends ExternalStoreRDD[T](sc, operatorId){
 
-  //val backupRDD: RDD = _
+  //var backupRDD: RDD[T] = _
+  //var needRecompute = false
+  //this.persist(StorageLevel.OFF_HEAP)
 
   override def getPartitions: Array[Partition] = {
     val files: List[ClientFileInfo] = externalBlockStore.listStatus(operatorId)
     val ps = new Array[Partition](files.size())
     var i = 0
-    while(i < files.size()){
+    while (i < files.size()) {
       val index = files.get(i).name.split("_").last.toInt
-      ps(index) = new TachyonPartition(index)
+      if (files.get(i).isIsComplete) {
+        ps(i) = new TachyonPartition(index)
+      } else {
+        ps(i) = null
+      }
       i += 1
     }
     ps
-    /*
-    var complete = true
-    while(complete && i < files.size()){
-      val index = files.get(i).name.split("_").last.toInt
-      ps(index) = new TachyonPartition(index)
-      i += 1
-      if (!files.get(i).isIsComplete) {
-        complete = false
-      }
-    }
-
-    if (complete) {
-      ps
-    } else {
-      backupRDD.getPartitions
-    }
-    //ps
-    */
   }
 
   override def getPreferredLocations(split: Partition): Seq[String] = {
-    //val hsplit = split.asInstanceOf[HadoopPartition].inputSplit.value
-    //val locs = new Seq[String](3)
-    //val fileName = "operator_" + operatorId + "_" + split.index
     import scala.collection.JavaConversions.asScalaBuffer
-    val ret = externalBlockStore.getLocations(operatorId, split.index).toSeq
-    //println("Locations for file " + fileName + " is " + ret.mkString(","))
-    ret
+    externalBlockStore.getLocations(operatorId, split.index).toSeq
   }
 
   override def compute(split: Partition, context: TaskContext) = {
     val fileName = "operator_" + operatorId + "_" + split.index
     logInfo("Input Split: " + fileName)
-    //considering for restoring it into memory because of benefit increase
     externalBlockStore.loadValues(new RDDBlockId(operatorId, split.index, Some(operatorId)))
       .getOrElse(Iterator.empty).asInstanceOf[Iterator[T]]
   }
 }
+
+/*
+class TachyonRDD [T: ClassTag](sc: SparkContext, operatorId: Int, backupRDD: RDD[T])
+  extends ExternalStoreRDD[T](sc, operatorId){
+
+  //var backupRDD: RDD[T] = _
+  //var needRecompute = false
+  //this.persist(StorageLevel.OFF_HEAP)
+
+  override def getPartitions: Array[Partition] = {
+    val files: List[ClientFileInfo] = externalBlockStore.listStatus(operatorId)
+    val ps = backupRDD.partitions
+    var i = 0
+    while (i < files.size()) {
+      val index = files.get(i).name.split("_").last.toInt
+      if (files.get(i).isIsComplete) {
+        ps(index) = new TachyonPartition(index)
+      }
+      i += 1
+    }
+    ps
+  }
+
+  override def getPreferredLocations(split: Partition): Seq[String] = {
+    import scala.collection.JavaConversions.asScalaBuffer
+    if (split.isInstanceOf[TachyonPartition]) {
+      externalBlockStore.getLocations(operatorId, split.index).toSeq
+    } else {
+      backupRDD.preferredLocations(split)
+    }
+  }
+
+  override def compute(split: Partition, context: TaskContext) = {
+    val fileName = "operator_" + operatorId + "_" + split.index
+    logInfo("Input Split: " + fileName)
+    if (split.isInstanceOf[TachyonPartition]) {
+      externalBlockStore.loadValues(new RDDBlockId(operatorId, split.index, Some(operatorId)))
+        .getOrElse(Iterator.empty).asInstanceOf[Iterator[T]]
+    } else {
+      backupRDD.compute(split, context)
+    }
+  }
+}
+*/

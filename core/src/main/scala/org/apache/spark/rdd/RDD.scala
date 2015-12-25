@@ -721,6 +721,17 @@ abstract class RDD[T: ClassTag](
       preservesPartitioning)
   }
 
+  //zengdan
+  def reusePartitions[U: ClassTag](
+      backupRdd: RDD[U],
+      f: Iterator[T] => Iterator[U]): RDD[U] = withScope {
+    val cleanedF = sc.clean(f)
+    new ReusePartitionsRDD(
+      this,
+      backupRdd,
+      (context: TaskContext, index: Int, iter: Iterator[T]) => cleanedF(iter))
+  }
+
   /**
    * Return a new RDD by applying a function to each partition of this RDD, while tracking the index
    * of the original partition.

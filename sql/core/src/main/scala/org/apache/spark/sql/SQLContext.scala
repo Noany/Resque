@@ -25,6 +25,7 @@ import org.apache.spark.serializer.Serializer
 import org.apache.spark.sql._
 import org.apache.spark.sql.auto.cache.QGDriver
 import org.apache.spark.sql.auto.cache.QGUtils.NodeDesc
+import org.apache.spark.storage.StorageLevel
 
 
 import scala.collection.JavaConversions._
@@ -36,7 +37,7 @@ import scala.util.control.NonFatal
 import org.apache.spark.{SparkConf, SparkContext}
 import org.apache.spark.annotation.{DeveloperApi, Experimental}
 import org.apache.spark.api.java.{JavaRDD, JavaSparkContext}
-import org.apache.spark.rdd.RDD
+import org.apache.spark.rdd.{TachyonRDD, RDD}
 import org.apache.spark.sql.SQLConf.SQLConfEntry
 import org.apache.spark.sql.catalyst.analysis._
 import org.apache.spark.sql.catalyst.errors.DialectException
@@ -83,17 +84,21 @@ class SQLContext(@transient val sparkContext: SparkContext)
   }
 
   //zengdan
-  def loadData(output: Seq[Attribute], nodeRef: Option[QNodeRef]): Option[RDD[InternalRow]] = {
-    var loaded: Option[RDD[InternalRow]] = None
+  def loadData(output: Seq[Attribute], nodeRef: Option[QNodeRef], backupRdd: RDD[InternalRow]): RDD[InternalRow] = {
+    var loaded: RDD[InternalRow] = backupRdd
     if(nodeRef.isDefined && nodeRef.get.reuse) {
-      val (data: Option[RDD[InternalRow]], exist: Boolean) =
+      val data: Option[RDD[InternalRow]] =
         this.sparkContext.loadCachedFile[InternalRow](nodeRef.get.id)
-      if (exist) {
+      if (data.isDefined) {
+        //val tachyonRdd = data.get
+        //tachyonRdd.persist(StorageLevel.OFF_HEAP)
+        //tachyonRdd.cacheID = Some(nodeRef.get.id)
         val schema = QGDriver.getSchema(nodeRef.get.id, this, this.qgDriver)
-        if(!schema.isEmpty){
-          loaded = Some(SQLContext.projectLoadedData(data.get, schema.map(_.name), output))
-        }
-
+        //if(!schema.isEmpty){
+          loaded = SQLContext.projectLoadedData(backupRdd, data.get, schema.map(_.name), output)
+        //}
+        //loaded.persist(StorageLevel.OFF_HEAP)
+        //loaded.cacheID = Some(nodeRef.get.id)
       }
     }
     loaded
@@ -1481,7 +1486,7 @@ object SQLContext {
   }
 
   //zengdan
-  def projectLoadedData(rdd: RDD[InternalRow], schema: RDD[InternalRow], output: Seq[Attribute]):RDD[InternalRow] = {
+  def projectLoadedData(backupRdd: RDD[InternalRow], rdd: RDD[InternalRow], schema: RDD[InternalRow], output: Seq[Attribute]):RDD[InternalRow] = {
     val loadSchemaRdd = schema.collect()
     require(loadSchemaRdd.size == 1, "Length of schema is not 1!")
     require(loadSchemaRdd(0).numFields == output.size, "Length of schema doesn't match!")
@@ -1494,66 +1499,70 @@ object SQLContext {
       //schemaIndexMap += (i -> schemaWithIndex(loadSchemaRdd(0).getString(i)))
       i += 1
     }
-    projectLoadedData(rdd, schemaString.toSeq, output)
+    projectLoadedData(backupRdd, rdd, schemaString.toSeq, output)
 
   }
 
   //zengdan
-  def projectLoadedData(rdd: RDD[InternalRow], schema: Seq[String], output: Seq[Attribute]):RDD[InternalRow] = {
+  def projectLoadedData(backupRdd: RDD[InternalRow], rdd: RDD[InternalRow], schema: Seq[String], output: Seq[Attribute]):RDD[InternalRow] = {
+    if (schema.isEmpty) {
+      rdd.reusePartitions(backupRdd, iter => iter)
+    } else {
 
-    val schemaWithIndex = scala.collection.mutable.Map[String, Int]()
-    //schemaWithIndex ++= output.map(_.treeStringByName).zipWithIndex
+      val schemaWithIndex = scala.collection.mutable.Map[String, Int]()
+      //schemaWithIndex ++= output.map(_.treeStringByName).zipWithIndex
 
-    var i = 0
-    while (i < schema.size) {
-      schemaWithIndex += (schema(i) -> i)
-      //schemaIndexMap += (i -> schemaWithIndex(loadSchemaRdd(0).getString(i)))
-      i += 1
-    }
+      var i = 0
+      while (i < schema.size) {
+        schemaWithIndex += (schema(i) -> i)
+        //schemaIndexMap += (i -> schemaWithIndex(loadSchemaRdd(0).getString(i)))
+        i += 1
+      }
 
-    /*
+      /*
     val unsafeProjectList = projectList.map(_ transform {
       case CreateStruct(children) => CreateStructUnsafe(children)
       case CreateNamedStruct(children) => CreateNamedStructUnsafe(children)
     })
     */
 
-    rdd.mapPartitions { loadIter =>
-      new Iterator[InternalRow] {
-        private val mutableRow = new GenericMutableRow(output.size)
-        private val converters = output.map(_.dataType).map(
-          CatalystTypeConverters.createToCatalystConverter)
-        val convertToUnsafe = UnsafeProjection.create(StructType.fromAttributes(output))
+      rdd.reusePartitions(backupRdd, { loadIter =>
+        new Iterator[InternalRow] {
+          private val mutableRow = new GenericMutableRow(output.size)
+          private val converters = output.map(_.dataType).map(
+            CatalystTypeConverters.createToCatalystConverter)
+          val convertToUnsafe = UnsafeProjection.create(StructType.fromAttributes(output))
 
-        override def hasNext = loadIter.hasNext
+          override def hasNext = loadIter.hasNext
 
-        override def next: InternalRow = {
-          val input = loadIter.next()
-          var i = 0
-          while (i < output.size) {
-            val inputIndex = try {
-              schemaWithIndex.get(output(i).name).get
-            } catch {
-              case e: Exception =>
-                throw new RuntimeException(e)
+          override def next: InternalRow = {
+            val input = loadIter.next()
+            var i = 0
+            while (i < output.size) {
+              val inputIndex = try {
+                schemaWithIndex.get(output(i).name).get
+              } catch {
+                case e: Exception =>
+                  throw new RuntimeException(e)
+              }
+              //val inputIndex = schemaIndexMap(i)
+              mutableRow(i) = converters(i)(output(i).dataType match {
+                case IntegerType => input.getInt(inputIndex)
+                case BooleanType => input.getBoolean(inputIndex)
+                case LongType => input.getLong(inputIndex)
+                case DoubleType => input.getDouble(inputIndex)
+                case FloatType => input.getFloat(inputIndex)
+                case ShortType => input.getShort(inputIndex)
+                case ByteType => input.getByte(inputIndex)
+                case StringType => input.getString(inputIndex)
+                case ArrayType(_, _) => input.getArray(inputIndex)
+              })
+              i += 1
             }
-            //val inputIndex = schemaIndexMap(i)
-            mutableRow(i) = converters(i)(output(i).dataType match {
-              case IntegerType => input.getInt(inputIndex)
-              case BooleanType => input.getBoolean(inputIndex)
-              case LongType => input.getLong(inputIndex)
-              case DoubleType => input.getDouble(inputIndex)
-              case FloatType => input.getFloat(inputIndex)
-              case ShortType => input.getShort(inputIndex)
-              case ByteType => input.getByte(inputIndex)
-              case StringType => input.getString(inputIndex)
-              case ArrayType(_, _) => input.getArray(inputIndex)
-            })
-            i += 1
+            convertToUnsafe(mutableRow)
           }
-          convertToUnsafe(mutableRow)
         }
-      }
+      })
     }
   }
 }

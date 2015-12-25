@@ -28,7 +28,7 @@ import scala.collection.mutable
 
 import org.apache.spark.Logging
 import org.apache.spark.annotation.DeveloperApi
-import org.apache.spark.rdd.{RDD, RDDOperationScope}
+import org.apache.spark.rdd.{TachyonRDD, RDD, RDDOperationScope}
 import org.apache.spark.sql._
 import org.apache.spark.sql.catalyst.{ScalaReflection, InternalRow, CatalystTypeConverters}
 import org.apache.spark.sql.catalyst.expressions._
@@ -371,9 +371,12 @@ abstract class SparkPlan extends QueryPlan[SparkPlan] with Logging with Serializ
     RDDOperationScope.withScope(sparkContext, nodeName, false, true) {
       prepare()
       //zengdan original:doExecute
-      val resultRdd = reuseData().getOrElse(doExecute())
+      val original = doExecute()
+      val resultRdd = reuseData(original)
       if(nodeRef.isDefined && nodeRef.get.collect)
         resultRdd.collectID = Some(nodeRef.get.id)
+
+      //val resultRdd = reuseData().getOrElse(doExecute())
       cacheData(resultRdd, output)
       //zengdan
     }
@@ -391,8 +394,8 @@ abstract class SparkPlan extends QueryPlan[SparkPlan] with Logging with Serializ
 
   //zengdan
   //reuse data
-  final def reuseData():Option[RDD[InternalRow]] = {
-    sqlContext.loadData(output, nodeRef)
+  final def reuseData(backupRdd: RDD[InternalRow]):RDD[InternalRow] = {
+    sqlContext.loadData(output, nodeRef, backupRdd)
   }
 
   /**

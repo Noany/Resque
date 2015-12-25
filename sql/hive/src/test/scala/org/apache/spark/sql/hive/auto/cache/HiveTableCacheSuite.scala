@@ -15,10 +15,11 @@ import org.scalatest.FunSuite
 class HiveTableCacheSuite extends FunSuite with Logging{
 
   System.setProperty("spark.sql.auto.cache", "true")
-  //System.setProperty("spark.sql.shuffle.partitions","1")
-  System.setProperty("hive.metastore.warehouse.dir", "/Users/zengdan/hive")
+  System.setProperty("spark.sql.shuffle.partitions","1")
+
   System.setProperty("spark.tachyonStore.global.baseDir","/global_spark_tachyon")
   System.setProperty("spark.externalBlockStore.blockManager", "org.apache.spark.storage.ReuseBlockManager")
+  System.setProperty("hive.metastore.warehouse.dir", "/Users/zengdan/hive")
   val conf = new SparkConf()
   conf.setAppName("TPCH").setMaster("local")
   //conf.set("spark.sql.shuffle.partitions","1")
@@ -32,14 +33,14 @@ class HiveTableCacheSuite extends FunSuite with Logging{
     }
   }.start()
 
-  val iter = 4
+  val iter = 1
   val collect = false
 
   test("TPCH Q1"){
     //QGMaster.main("--host localhost --port 7070".split(" "))
 
-    for(i <- 1 to 1) {
-      for (query <- 1 to 1) {
+    for(query <- 1 to 22) {
+      for (i <- 1 to 6) {
         logInfo(s"=======query $query=======")
         val q = query
         this.getClass.getMethod("executeQ" + q, Array.empty[Class[_]]: _*).invoke(this, Array.empty[Object]: _*)
@@ -183,6 +184,8 @@ class HiveTableCacheSuite extends FunSuite with Logging{
       if(collect) println("Result count is " + res2.collect().length)
       else println("Result count is " + res2.count())
     }
+
+
   }
 
   def executeQ3()= {

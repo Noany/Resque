@@ -103,8 +103,6 @@ private[spark] class ReuseBlockManager() extends ExternalBlockManager with Loggi
         conf.set("tachyon.usezookeeper", "" + useZookeeper);
         conf.set("tachyon.master.hostname", tachyonURI.getHost());
         conf.set("tachyon.master.port", Integer.toString(tachyonURI.getPort()));
-        println("System.getTachyonWorkerTimeout is " + System.getProperty("tachyon.worker.user.timeout.ms"))
-        conf.set("tachyon.worker.user.timeout.ms", System.getProperty("tachyon.worker.user.timeout.ms", "10000000"));
         return conf;
       } else {
         throw new IOException("Invalid Tachyon URI: " + tachyonURI + ". Use " + "tachyon://" + "host:port/ ," + "tachyon-ft://" + "host:port/");
@@ -180,39 +178,41 @@ private[spark] class ReuseBlockManager() extends ExternalBlockManager with Loggi
 
   override def putBytes(blockId: BlockId, bytes: ByteBuffer): Unit = {
     val file = getFile(blockId)
-    val path = file.getPath.split("/");
-    val fileName = path(path.length - 1).split("_")
-    val id = fileName(fileName.length - 2).toInt
-    val index = fileName(fileName.length - 1).toInt
-    //val os = file.getOutStream(WriteType.TRY_CACHE)
-    val benefit = idToBenefit.get(id).getOrElse(QGWorker.getBenefit(id, SparkEnv.get.conf, qgWorker))
-    idToBenefit.put(id, benefit)
-    //val os = file.getOutStream(WriteType.TRY_CACHE)
-    val os: OutStream = try {
-      //file.getOutStream(WriteType.TRY_CACHE, bytes.array().size, id, index, benefit)
-      throw new IOException("Failed to free Space")
-    } catch {
-      case e : IOException =>
-        logWarning(s"Failed to put bytes of block into Tachyon because of getOutStream")
-        logError(e.getMessage)
-        throw e
-        //return
+    val os = if (blockId.name.startsWith("operator")) {
+      val fileName = blockId.name.split("_")
+      val id = fileName(fileName.length - 2).toInt
+      val index = fileName(fileName.length - 1).toInt
+      //val os = file.getOutStream(WriteType.TRY_CACHE)
+      val benefit = idToBenefit.get(id).getOrElse(QGWorker.getBenefit(id, SparkEnv.get.conf, qgWorker))
+      idToBenefit.put(id, benefit)
+      //val os = file.getOutStream(WriteType.TRY_CACHE)
+      var partitionOs: OutStream = null
+      try {
+        file.getOutStream(WriteType.TRY_CACHE, bytes.array().size, id, index, benefit)
+      } catch {
+        case e: IOException =>
+          logWarning(s"Failed to put bytes of block into Tachyon because of getOutStream")
+          //logError(e.getMessage)
+          return
+      }
+    } else {
+      file.getOutStream(WriteType.TRY_CACHE)
     }
-
 
     try {
       os.write(bytes.array())
     } catch {
-      case NonFatal(e) =>
-        logWarning(s"Failed to put bytes of block $blockId into Tachyon", e)
-        os.cancel()
       case e: IOException =>
         logWarning(s"Failed to put bytes of block into Tachyon because of write")
-        logError(e.getMessage)
+        //logError(e.getMessage)
+        os.cancel()
+      case NonFatal(e) =>
+        logWarning(s"Failed to put bytes of block $blockId into Tachyon", e)
         os.cancel()
     } finally {
       os.close()
     }
+
   }
 
   //zengdan
@@ -268,6 +268,13 @@ private[spark] class ReuseBlockManager() extends ExternalBlockManager with Loggi
     */
 
     val is = file.getInStream(ReadType.NO_CACHE)
+    //只有一个block时返回blockStream，会锁住对应的block
+    //有多个block时返回FileInStream，blockStream在读之前未进行初始化
+    val size = file.length
+    val bs = new Array[Byte](size.asInstanceOf[Int])
+    ByteStreams.readFully(is, bs)
+    is.close()
+
     try {
 
       //判断是否在内存
@@ -290,10 +297,7 @@ private[spark] class ReuseBlockManager() extends ExternalBlockManager with Loggi
         }
       }
 
-      val size = file.length
-      val bs = new Array[Byte](size.asInstanceOf[Int])
-      ByteStreams.readFully(is, bs)
-      is.close()
+
       Some(ByteBuffer.wrap(bs))
     } catch {
       case NonFatal(e) =>
