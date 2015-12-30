@@ -40,7 +40,7 @@ class HiveTableCacheSuite extends FunSuite with Logging{
     //QGMaster.main("--host localhost --port 7070".split(" "))
 
     for(query <- 1 to 22) {
-      for (i <- 1 to 6) {
+      for (i <- 1 to 4) {
         logInfo(s"=======query $query=======")
         val q = query
         this.getClass.getMethod("executeQ" + q, Array.empty[Class[_]]: _*).invoke(this, Array.empty[Object]: _*)
@@ -50,12 +50,13 @@ class HiveTableCacheSuite extends FunSuite with Logging{
 
   }
 
+  //test TakeOrderedAndProject
   def executeQ0()={
     for(i <- 1 to iter) {
 
       val res0 = sqlContext.sql("""select l_returnflag, l_linestatus from lineitem
                                 where l_shipdate <= '1998-09-16' and l_returnflag like '%R%'
-                                """)
+                                 order by l_returnflag limit 1""")
 
       //res0.queryExecution.optimizedPlan(0).expressions.foreach(x => println(x.treeString))
       //order by l_returnflag, l_linestatus""")
@@ -82,10 +83,10 @@ class HiveTableCacheSuite extends FunSuite with Logging{
     val conf1 = new SparkConf()
     conf1.setAppName("TPCH2").setMaster("local")
     conf1.set("spark.sql.shuffle.partitions","2")
-    sc = new SparkContext(conf1)
-    sc.hadoopConfiguration.set("fs.tachyon.impl","tachyon.hadoop.TFS")
+    val sc1 = new SparkContext(conf1)
+    sc1.hadoopConfiguration.set("fs.tachyon.impl","tachyon.hadoop.TFS")
 
-    val sqlContext1 = new org.apache.spark.sql.hive.HiveContext(sc)
+    val sqlContext1 = new org.apache.spark.sql.hive.HiveContext(sc1)
 
     val res1 = sqlContext1.sql("""select l_returnflag, l_linestatus, sum(l_quantity) , sum(l_extendedprice) as sum_base_price, sum(l_extendedprice * (1 - l_discount)) as sum_disc_price, sum(l_extendedprice * (1 - l_discount) * (1 + l_tax)) as sum_charge, avg(l_quantity) as avg_qty, avg(l_extendedprice) as avg_price, avg(l_discount) as avg_disc, count(*) as count_order
                                 from lineitem
@@ -104,6 +105,12 @@ class HiveTableCacheSuite extends FunSuite with Logging{
                                 group by l_returnflag, l_linestatus, l_shipmode""")
 
     res0.collect()
+
+    val res = sqlContext.sql("""select l_returnflag, l_linestatus, l_shipmode, sum(l_quantity) , sum(l_extendedprice * (1 - l_discount)) as sum_disc_price, sum(l_extendedprice * (1 - l_discount) * (1 + l_tax)) as sum_charge, avg(l_quantity) as avg_qty, avg(l_extendedprice) as avg_price, avg(l_discount) as avg_disc, count(*) as count_order
+                                from lineitem
+                                where l_shipdate <= '1998-09-16' and l_shipmode != 'mode'
+                                group by l_returnflag, l_linestatus, l_shipmode""")
+    res.collect()
 
     val res1 = sqlContext.sql("""select l_returnflag, l_linestatus, sum(l_quantity) , sum(l_extendedprice) as sum_base_price, sum(l_extendedprice * (1 - l_discount)) as sum_disc_price, sum(l_extendedprice * (1 - l_discount) * (1 + l_tax)) as sum_charge, avg(l_quantity) as avg_qty, avg(l_extendedprice) as avg_price, avg(l_discount) as avg_disc, count(*) as count_order
                                 from lineitem

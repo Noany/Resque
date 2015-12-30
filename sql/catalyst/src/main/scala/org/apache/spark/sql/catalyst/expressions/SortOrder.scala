@@ -52,6 +52,11 @@ case class SortOrder(child: Expression, direction: SortDirection)
   override def toString: String = s"$child ${if (direction == Ascending) "ASC" else "DESC"}"
 
   def isAscending: Boolean = direction == Ascending
+
+  override def equals(so : Any) = so match{
+    case e : SortOrder => direction.equals(e.direction) && child.treeStringByName.equals(e.child.treeStringByName)
+    case _ => false
+  }
 }
 
 /**

@@ -40,7 +40,10 @@ import org.apache.spark.{HashPartitioner, Partitioner, RangePartitioner, SparkEn
 @DeveloperApi
 case class Exchange(newPartitioning: Partitioning, child: SparkPlan) extends UnaryNode {
 
-
+  override def operatorMatch(plan: SparkPlan) = plan match {
+    case Exchange(partition, _) => partition.matches(newPartitioning)
+    case _ => false
+  }
 
   override def nodeName: String = if (tungstenMode) "TungstenExchange" else "Exchange"
 
@@ -169,20 +172,23 @@ case class Exchange(newPartitioning: Partitioning, child: SparkPlan) extends Una
       case RangePartitioning(_, _) | SinglePartition => identity
       case _ => sys.error(s"Exchange not implemented for $newPartitioning")
     }
+
     val rddWithPartitionIds: RDD[Product2[Int, InternalRow]] = {
       if (needToCopyObjectsBeforeShuffle(part, serializer)) {
         rdd.mapPartitions { iter =>
           val getPartitionKey = getPartitionKeyExtractor()
-          mapWithReuse[InternalRow](iter,
-            { row: InternalRow => (part.getPartition(getPartitionKey(row)), row.copy()) })
+          iter.map { row => (part.getPartition(getPartitionKey(row)), row.copy())
+            //mapWithReuse[InternalRow](iter,
+            // { row: InternalRow => (part.getPartition(getPartitionKey(row)), row.copy()) })
+          }
         }
-
       } else {
         rdd.mapPartitions { iter =>
           val getPartitionKey = getPartitionKeyExtractor()
           val mutablePair = new MutablePair[Int, InternalRow]()
-          mapWithReuse[InternalRow](iter,
-             { row: InternalRow => mutablePair.update(part.getPartition(getPartitionKey(row)), row) })
+          iter.map { row => mutablePair.update(part.getPartition(getPartitionKey(row)), row) }
+          //mapWithReuse[InternalRow](iter,
+          //   { row: InternalRow => mutablePair.update(part.getPartition(getPartitionKey(row)), row) })
         }
       }
     }
@@ -192,10 +198,9 @@ case class Exchange(newPartitioning: Partitioning, child: SparkPlan) extends Una
       rddWithPartitionIds.collectID = Some(nodeRef.get.id)
 
     new ShuffledRowRDD(rddWithPartitionIds, serializer, part.numPartitions)
-      .mapPartitions{iter => mapWithReuse[InternalRow](iter, {row: InternalRow => row})} //zengdan
+      .mapPartitions{iter => mapWithReuse[InternalRow](iter, {row: InternalRow => row}, true)} //zengdan
 
   }
-
 
   //zengdan
   def mapWithReuse[T](iter: Iterator[T], f: T => Product2[Int, InternalRow]) = {
@@ -214,7 +219,8 @@ case class Exchange(newPartitioning: Partitioning, child: SparkPlan) extends Una
             logDebug(s"Exchange before Shuffle ${nodeRef.get.id}: $time, $rowCount, $avgSize")
             val materializationTime = Stats.statistics.get.get(0).getOrElse(Array(0))(0)
             //生成iterator的时间
-            val initializeTime = Stats.statistics.get.get(nodeRef.get.id).get(0)
+            val initializeTime = Stats.initialTimes.get.get(nodeRef.get.id).get
+            val finaltime = (time / 1e6).toInt + initializeTime + materializationTime
             Stats.statistics.get.put(nodeRef.get.id,
               Array((time / 1e6).toInt + initializeTime + materializationTime, 0))
           }

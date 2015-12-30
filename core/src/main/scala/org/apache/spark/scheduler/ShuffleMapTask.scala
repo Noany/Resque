@@ -75,18 +75,23 @@ private[spark] class ShuffleMapTask(
 
       if(rdd.collectID.isDefined){
         //need to collect shuffle write time, defined in exchange
-        val iter = rdd.iterator(partition, context).asInstanceOf[Iterator[_ <: Product2[Any, Any]]]
-
         val start = System.nanoTime()
+        val iter = rdd.iterator(partition, context).asInstanceOf[Iterator[_ <: Product2[Any, Any]]]
         writer.write(iter)
         val time = System.nanoTime() - start
+
+        val materializationTime = Stats.statistics.get.get(0).getOrElse(Array(0))(0)
+        //val initializeTime = Stats.statistics.get.get(rdd.collectID.get).get(0)
+        val finalTime = (time / 1e6).toInt + materializationTime
+
         val statistics = Stats.statistics.get()
-        val childtime = statistics.get(rdd.collectID.get)
-        if(!childtime.isDefined)
-          return writer.stop(success = true).get
-        logDebug(s"In ShuffleMapTask, childtime is ${childtime.get(0)} ms, write time is ${time/1e6} ms")
-        statistics.put(rdd.collectID.get, Array((time/1e6-childtime.get(0)).toInt,0))
-        statistics.put((-1)*rdd.collectID.get, Array((time/1e6-childtime.get(0)).toInt,0))
+        //val childtime = statistics.get(rdd.collectID.get)
+        //if(!childtime.isDefined)
+          //return writer.stop(success = true).get
+        logDebug(s"ShuffleMapTask Time is ${finalTime}: ${materializationTime}  ${time} ms")
+        //statistics.put(rdd.collectID.get, Array((time/1e6-childtime.get(0)).toInt,0))
+        statistics.put((-1)*rdd.collectID.get, Array(finalTime,0))
+        //statistics.put(rdd.collectID.get, Array(0,0))
       }else{
         writer.write(rdd.iterator(partition, context).asInstanceOf[Iterator[_ <: Product2[Any, Any]]])
       }

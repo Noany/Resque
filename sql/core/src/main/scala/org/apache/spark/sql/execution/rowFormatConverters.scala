@@ -34,7 +34,7 @@ case class ConvertToUnsafe(child: SparkPlan) extends UnaryNode {
   require(UnsafeProjection.canSupport(child.schema), s"Cannot convert ${child.schema} to Unsafe")
 
   override def operatorMatch(plan: SparkPlan):Boolean = plan match{
-    case ct: ConvertToSafe => ct.child.operatorMatch(this.child)
+    case ct: ConvertToUnsafe => true //ct.child.operatorMatch(this.child)
     case _ => false
   }
 
@@ -60,7 +60,7 @@ case class ConvertToUnsafe(child: SparkPlan) extends UnaryNode {
 case class ConvertToSafe(child: SparkPlan) extends UnaryNode {
 
   override def operatorMatch(plan: SparkPlan):Boolean = plan match{
-    case ct: ConvertToSafe => ct.child.operatorMatch(this.child)
+    case ct: ConvertToSafe => true //ct.child.operatorMatch(this.child)
     case _ => false
   }
 

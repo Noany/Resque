@@ -14,6 +14,6 @@ sealed trait QGUtils extends Serializable
 
 object QGUtils{
   case class PlanDesc(appId: String, jars: HashMap[String, Long], serializedPlan: SerializableBuffer)
-  case class PlanUpdate(refs: HashMap[Int, QNodeRef], varNodes: HashMap[Int, ArrayBuffer[NodeDesc]])
+  case class PlanUpdate(refs: HashMap[Int, QNodeRef], addNodes: HashMap[Int, ArrayBuffer[NodeDesc]])
   case class NodeDesc(nodeRef: QNodeRef, args: AnyRef*)
 }

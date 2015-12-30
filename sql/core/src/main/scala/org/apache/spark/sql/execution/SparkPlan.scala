@@ -39,7 +39,7 @@ import org.apache.spark.sql.execution.metric.{LongSQLMetric, SQLMetric, SQLMetri
 import org.apache.spark.sql.types.{AtomicType, DataType}
 
 //zengdan
-case class QNodeRef(var id: Int, var cache: Boolean, var collect: Boolean, var reuse: Boolean = false)
+case class QNodeRef(var id: Int, var cache: Boolean, var collect: Boolean, var reuse: Boolean = false, var existTime: Long)
 
 
 object SparkPlan {
@@ -59,6 +59,7 @@ abstract class SparkPlan extends QueryPlan[SparkPlan] with Logging with Serializ
   @volatile protected[spark] var time: Long = 0
   var id: Int = -1
   var nodeRef: Option[QNodeRef] = None
+  var childTime = -1L
   @transient lazy val (fixedSize, varIndexes) = outputSize(output)
   //protected[spark] var partialCollect: Boolean = false
 
@@ -87,6 +88,7 @@ abstract class SparkPlan extends QueryPlan[SparkPlan] with Logging with Serializ
     }
   }
 
+  //zengdan
   def compareExpressions(expr1: Seq[Expression], expr2: Seq[Expression]): Boolean ={
     val e1 = expr1.map(_.treeStringByName).sortWith(_.compareTo(_) < 0)
     val e2 = expr2.map(_.treeStringByName).sortWith(_.compareTo(_) < 0)
@@ -98,18 +100,13 @@ abstract class SparkPlan extends QueryPlan[SparkPlan] with Logging with Serializ
     else{
       var i = 0
       while(i < e1.length){
-        val x = e1(i)
-        //.treeStringByName
-        val y = e2(i)
-        //.treeStringByName
-        if(x.compareTo(y) != 0)
+        if(e1(i).compareTo(e2(i)) != 0)
           return false
         i += 1
       }
       i != 0
     }
   }
-
 
   //zengdan
   protected def outputSize(schema: Seq[Attribute]):(Int, List[Int]) = {
@@ -158,6 +155,8 @@ abstract class SparkPlan extends QueryPlan[SparkPlan] with Logging with Serializ
     }
   }
 
+
+
   def mapWithReuse[T](iter: Iterator[T], f: T => InternalRow,
                       materialization: Boolean = false) = {
     val shouldCollect = nodeRef.isDefined && nodeRef.get.collect
@@ -174,24 +173,14 @@ abstract class SparkPlan extends QueryPlan[SparkPlan] with Logging with Serializ
           if (!has && rowCount != 0) {
             avgSize = (fixedSize + avgSize / rowCount)
             logDebug(s"${nodeName} ${nodeRef.get.id}: $time, $rowCount, $avgSize")
-            //在task开始之前初始化
-            /*
-            var statistics = Stats.statistics.get()
-            if (statistics == null) {
-              statistics = Map[Int, Array[Int]]()
-              Stats.statistics.set(statistics)
-            }
-            */
-
             val materializationTime = Stats.statistics.get.get(0).getOrElse(Array(0))(0)
-
             //生成iterator的时间
-            val initializeTime = Stats.statistics.get.get(nodeRef.get.id).get(0)
+            val initializeTime = Stats.initialTimes.get.get(nodeRef.get.id).get
             Stats.statistics.get.put(nodeRef.get.id,
               Array((time / 1e6).toInt + initializeTime + materializationTime, avgSize * rowCount))
             if(materialization)
               Stats.statistics.get.put(0,
-                Array((time / 1e6).toInt + initializeTime + materializationTime, 0))
+                Array((time / 1e6).toInt + materializationTime, 0))
 
           }
           has
@@ -199,7 +188,8 @@ abstract class SparkPlan extends QueryPlan[SparkPlan] with Logging with Serializ
 
         override def next = {
           start = System.nanoTime()
-          val result = f(iter.next())
+          val pre = iter.next()
+          val result = f(pre)
           time += (System.nanoTime() - start)
           rowCount += 1
           for (index <- varIndexes) {
@@ -213,6 +203,8 @@ abstract class SparkPlan extends QueryPlan[SparkPlan] with Logging with Serializ
       iter.map(f)
     }
   }
+
+
 
   //zengdan
   def filterWithReuse(iter: Iterator[InternalRow], f: InternalRow => Boolean,
@@ -239,12 +231,12 @@ abstract class SparkPlan extends QueryPlan[SparkPlan] with Logging with Serializ
 
                   val materializationTime = Stats.statistics.get.get(0).getOrElse(Array(0))(0)
 
-                  val initializeTime = Stats.statistics.get.get(nodeRef.get.id).get(0)
+                  val initializeTime = Stats.initialTimes.get.get(nodeRef.get.id).get
                   Stats.statistics.get.put(nodeRef.get.id,
                     Array((time / 1e6).toInt + initializeTime + materializationTime, avgSize * rowCount))
                   if(materialization)
                     Stats.statistics.get.put(0,
-                      Array((time / 1e6).toInt + initializeTime + materializationTime, 0))
+                      Array((time / 1e6).toInt + materializationTime, 0))
                 }
                 return false
               }
@@ -371,6 +363,7 @@ abstract class SparkPlan extends QueryPlan[SparkPlan] with Logging with Serializ
     RDDOperationScope.withScope(sparkContext, nodeName, false, true) {
       prepare()
       //zengdan original:doExecute
+      //TODO: considering eager doExecute like TakeOrderedAndProject
       val original = doExecute()
       val resultRdd = reuseData(original)
       if(nodeRef.isDefined && nodeRef.get.collect)
@@ -436,25 +429,29 @@ abstract class SparkPlan extends QueryPlan[SparkPlan] with Logging with Serializ
   //zengdan
   def updateTime(plan: SparkPlan, statistics: mutable.Map[Int, Array[Long]]): Long ={
     if(plan.children.isEmpty) return 0
-    var addChild = false
-    var childStageTime = 0L
-    for(child <- plan.children){
-      childStageTime += updateTime(child, statistics)
+    var preStage = 0L
+    for (child <- plan.children) {
+      preStage += updateTime(child, statistics)
     }
-    val stats = statistics.get(plan.nodeRef.get.id)
-    if(stats.isDefined){
-      stats.get(0) += childStageTime
-    }
-
-    if(plan.isInstanceOf[Exchange]) {
-      val stats = statistics.get((-1)*(plan.nodeRef.get.id))
-      if(stats.isDefined){
-        stats.get(0)
-      }else{
-        childStageTime
+    if (plan.nodeRef.isDefined) {
+      val planId = plan.nodeRef.get.id
+      if (plan.isInstanceOf[Exchange]) {
+        if (plan.nodeRef.get.existTime == -1) {
+          val exchangeStats = statistics.get(planId)
+          if (exchangeStats.isDefined) {
+            preStage += statistics.get((-1) * (planId)).get(0)
+            statistics.remove((-1) * (planId))
+          }
+        } else {
+          preStage += plan.nodeRef.get.existTime
+        }
       }
-    }else
-      childStageTime
+      val stats = statistics.get(planId)
+      if (stats.isDefined) {
+        stats.get(0) += preStage
+      }
+    }
+    preStage
   }
 
   /**

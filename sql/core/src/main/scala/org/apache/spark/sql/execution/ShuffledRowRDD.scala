@@ -62,15 +62,17 @@ class ShuffledRowRDD(
   override val partitioner = Some(part)
 
   override def getPartitions: Array[Partition] = {
+    dependencies
     Array.tabulate[Partition](part.numPartitions)(i => new ShuffledRowRDDPartition(i))
   }
 
   override def compute(split: Partition, context: TaskContext): Iterator[InternalRow] = {
     val dep = dependencies.head.asInstanceOf[ShuffleDependency[Int, InternalRow, InternalRow]]
-    SparkEnv.get.shuffleManager.getReader(dep.shuffleHandle, split.index, split.index + 1, context)
+    val iter = SparkEnv.get.shuffleManager.getReader(dep.shuffleHandle, split.index, split.index + 1, context)
       .read()
       .asInstanceOf[Iterator[Product2[Int, InternalRow]]]
       .map(_._2)
+    iter
   }
 
   override def clearDependencies() {

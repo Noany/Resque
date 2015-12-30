@@ -31,9 +31,11 @@ import org.apache.spark.sql.types.StructType
 import org.apache.spark.util.collection.ExternalSorter
 import org.apache.spark.util.collection.unsafe.sort.PrefixComparator
 import org.apache.spark.util.random.PoissonSampler
-import org.apache.spark.util.{CompletionIterator, MutablePair}
-import org.apache.spark.{HashPartitioner, SparkEnv}
+import org.apache.spark.util.{BoundedPriorityQueue, Stats, CompletionIterator, MutablePair}
+import org.apache.spark.{util, HashPartitioner, SparkEnv}
 
+import scala.collection.AbstractIterator
+import scala.collection.Iterator._
 import scala.collection.parallel.mutable
 
 /**
@@ -41,6 +43,7 @@ import scala.collection.parallel.mutable
  */
 @DeveloperApi
 case class Project(projectList: Seq[NamedExpression], child: SparkPlan) extends UnaryNode {
+  //zengdan
   override def output: Seq[Attribute] = projectList.map(_.toAttribute)
 
   override private[sql] lazy val metrics = Map(
@@ -72,12 +75,11 @@ case class TungstenProject(projectList: Seq[NamedExpression], child: SparkPlan) 
   override private[sql] lazy val metrics = Map(
     "numRows" -> SQLMetrics.createLongMetric(sparkContext, "number of rows"))
 
-
-
   override def outputsUnsafeRows: Boolean = true
   override def canProcessUnsafeRows: Boolean = true
   override def canProcessSafeRows: Boolean = true
 
+  //zengdan
   override def output: Seq[Attribute] = projectList.map(_.toAttribute)
 
   /** Rewrite the project list to use unsafe expressions as needed. */
@@ -90,10 +92,11 @@ case class TungstenProject(projectList: Seq[NamedExpression], child: SparkPlan) 
     val numRows = longMetric("numRows")
     child.execute().mapPartitions { iter =>
       val project = UnsafeProjection.create(unsafeProjectList, child.output)
-      iter.map { row =>
+      //zengdan iter.map => mapWithReuse
+      mapWithReuse[InternalRow](iter, { row =>
         numRows += 1
         project(row)
-      }
+      })
     }
   }
 
@@ -186,8 +189,10 @@ case class Union(children: Seq[SparkPlan]) extends SparkPlan {
   override def outputsUnsafeRows: Boolean = children.forall(_.outputsUnsafeRows)
   override def canProcessUnsafeRows: Boolean = true
   override def canProcessSafeRows: Boolean = true
-  protected override def doExecute(): RDD[InternalRow] =
-    sparkContext.union(children.map(_.execute()))
+  protected override def doExecute(): RDD[InternalRow] = {
+    val rdd = sparkContext.union(children.map(_.execute()))
+    rdd.mapPartitions(iter => mapWithReuse[InternalRow](iter,row => row)) //zengdan
+  }
 }
 
 /**
@@ -220,18 +225,99 @@ case class Limit(limit: Int, child: SparkPlan)
   protected override def doExecute(): RDD[InternalRow] = {
     val rdd: RDD[_ <: Product2[Boolean, InternalRow]] = if (sortBasedShuffleOn) {
       child.execute().mapPartitions { iter =>
-        iter.take(limit).map(row => (false, row.copy()))
+        //iter.take(limit).map(row => row.copy())
+        val shouldCollect = nodeRef.isDefined && nodeRef.get.collect
+        if (shouldCollect) {
+          var start: Long = 0
+
+          new Iterator[Product2[Boolean, InternalRow]] {
+            private var remaining = limit
+
+            override def hasNext = {
+              start = System.nanoTime()
+              val has = remaining > 0 && iter.hasNext
+              time += (System.nanoTime() - start)
+              if (!has) {
+                logDebug(s"Limit before Shuffle ${nodeRef.get.id}: $time, $rowCount, $avgSize")
+                val materializationTime = Stats.statistics.get.get(0).getOrElse(Array(0))(0)
+                //生成iterator的时间
+                val initializeTime = Stats.initialTimes.get.get(nodeRef.get.id).get
+                Stats.statistics.get.put(nodeRef.get.id,
+                  Array((time / 1e6).toInt + initializeTime + materializationTime, 0))
+              }
+              has
+            }
+
+            override def next = {
+              start = System.nanoTime()
+              val takeRet = if (remaining > 0) {
+                remaining -= 1
+                iter.next()
+              }
+              else empty.next()
+              val result = (false, takeRet.copy())
+              time += (System.nanoTime() - start)
+              result
+            }
+          }
+        } else {
+          iter.take(limit).map(row => (false, row.copy()))
+        }
       }
     } else {
       child.execute().mapPartitions { iter =>
+
         val mutablePair = new MutablePair[Boolean, InternalRow]()
-        iter.take(limit).map(row => mutablePair.update(false, row))
+        //iter.take(limit).map(row => mutablePair.update(false, row))
+        val shouldCollect = nodeRef.isDefined && nodeRef.get.collect
+        if(shouldCollect){
+          var start: Long = 0
+
+          new Iterator[Product2[Boolean, InternalRow]]{
+            private var remaining = limit
+
+            override def hasNext = {
+              start = System.nanoTime()
+              val has = remaining > 0 && iter.hasNext
+              time += (System.nanoTime() - start)
+              if (!has) {
+                logDebug(s"Limit before Shuffle ${nodeRef.get.id}: $time, $rowCount, $avgSize")
+                val materializationTime = Stats.statistics.get.get(0).getOrElse(Array(0))(0)
+                //生成iterator的时间
+                val initializeTime = Stats.initialTimes.get.get(nodeRef.get.id).get
+                Stats.statistics.get.put(nodeRef.get.id,
+                  Array((time / 1e6).toInt + initializeTime + materializationTime, 0))
+              }
+              has
+            }
+
+            override def next = {
+              start = System.nanoTime()
+              val takeRet = if (remaining > 0) {
+                remaining -= 1
+                iter.next()
+              }
+              else empty.next()
+              val result = mutablePair.update(false, takeRet)
+              time += (System.nanoTime() - start)
+              result
+            }
+          }
+        }else{
+          iter.take(limit).map(row => mutablePair.update(false, row))
+        }
       }
     }
+
+    //zengdan
+    if(nodeRef.isDefined && nodeRef.get.collect)
+      rdd.collectID = Some(nodeRef.get.id)
+
     val part = new HashPartitioner(1)
     val shuffled = new ShuffledRDD[Boolean, InternalRow, InternalRow](rdd, part)
     shuffled.setSerializer(new SparkSqlSerializer(child.sqlContext.sparkContext.getConf))
     shuffled.mapPartitions(_.take(limit).map(_._2))
+      .mapPartitions{iter => mapWithReuse[InternalRow](iter, {row: InternalRow => row})} //zengdan
   }
 }
 
@@ -281,23 +367,63 @@ case class TakeOrderedAndProject(
   @transient private val projection = projectList.map(new InterpretedProjection(_, child.output))
 
   private def collectData(): Array[InternalRow] = {
-    val data = child.execute().map(_.copy()).takeOrdered(limit)(ord)
-    projection.map(data.map(_)).getOrElse(data)
+    val childRdd = child.execute().map(_.copy())
+    //val data = child.execute().map(_.copy()).takeOrdered(limit)(ord)
+    //projection.map(data.map(_)).getOrElse(data)
 
-    /*
-    val data = reuseData().getOrElse(child.execute()).map(_.copy()).takeOrdered(limit)(ord)
-    projection.map(data.map(_)).getOrElse(data)
-    */
+    val mapRDDs = childRdd.mapPartitions { items =>
+      // Priority keeps the largest elements, so let's reverse the ordering.
+      val queue = new BoundedPriorityQueue[InternalRow](limit)(ord.reverse)
+      val shouldCollect = nodeRef.isDefined && nodeRef.get.collect
+      if(shouldCollect){
+        val start =  System.nanoTime()
+        queue ++= util.collection.Utils.takeOrdered(items, limit)(ord)
+        val ret = Iterator.single(queue)
+        time += (System.nanoTime() - start)
+        val materializationTime = Stats.statistics.get.get(0).getOrElse(Array(0))(0)
+        Stats.statistics.get.put(nodeRef.get.id,
+          Array((time / 1e6).toInt + materializationTime, avgSize * rowCount))
+        Stats.statistics.get.put(0,
+          Array((time / 1e6).toInt + materializationTime, 0))
+
+        ret
+      }else{
+        queue ++= util.collection.Utils.takeOrdered(items, limit)(ord)
+        Iterator.single(queue)
+      }
+    }
+    if (mapRDDs.partitions.length == 0) {
+      Array.empty
+    } else {
+      val arr = mapRDDs.reduce { (queue1, queue2) =>
+        queue1 ++= queue2
+        queue1
+      }.toArray//.sorted(ord)
+      val shouldCollect = nodeRef.isDefined && nodeRef.get.collect
+      if(shouldCollect) {
+        val start =  System.nanoTime()
+        val data = arr.sorted(ord)
+        val ret = projection.map(data.map(_)).getOrElse(data)
+        time += (System.nanoTime() - start)
+        ret
+      } else {
+        arr.sorted(ord)
+      }
+    }
   }
 
+  /*
+  zengdan delete it
   override def executeCollect(): Array[Row] = {
     val converter = CatalystTypeConverters.createToScalaConverter(schema)
     collectData().map(converter(_).asInstanceOf[Row])
   }
+  */
 
   // TODO: Terminal split should be implemented differently from non-terminal split.
   // TODO: Pick num splits based on |limit|.
-  protected override def doExecute(): RDD[InternalRow] = sparkContext.makeRDD(collectData(), 1)
+  protected override def doExecute(): RDD[InternalRow] =
+    sparkContext.makeRDD(collectData(), 1).mapPartitions(iter => mapWithReuse[InternalRow](iter, row => row))//zengdan
 
   override def outputOrdering: Seq[SortOrder] = sortOrder
 
@@ -374,5 +500,6 @@ case class Intersect(left: SparkPlan, right: SparkPlan) extends BinaryNode {
 case class OutputFaker(output: Seq[Attribute], child: SparkPlan) extends SparkPlan {
   def children: Seq[SparkPlan] = child :: Nil
 
-  protected override def doExecute(): RDD[InternalRow] = child.execute()
+  protected override def doExecute(): RDD[InternalRow] =
+    child.execute().mapPartitions(iter => mapWithReuse[InternalRow](iter, row => row))
 }

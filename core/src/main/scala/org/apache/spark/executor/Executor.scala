@@ -210,6 +210,7 @@ private[spark] class Executor(
 
         //zengdan
         Stats.statistics.set(Map[Int, Array[Int]]())
+        Stats.initialTimes.set(Map[Int, Int]())
 
         // Run the actual task and measure its runtime.
         taskStart = System.currentTimeMillis()

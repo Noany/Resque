@@ -303,7 +303,9 @@ abstract class RDD[T: ClassTag](
       if(collectID.isDefined){
         val start = System.nanoTime()
         val res = compute(split, context)
-        Stats.statistics.get.put(collectID.get, Array(((System.nanoTime() - start) / 1e6).toInt, 0))
+        val time = ((System.nanoTime() - start) / 1e6).toInt
+        //Stats.statistics.get.put(collectID.get, Array(time, 0))
+        Stats.initialTimes.get.put(collectID.get, time)
         res
       }else {
         compute(split, context)

@@ -137,7 +137,7 @@ case class Aggregate(
   protected override def doExecute(): RDD[InternalRow] = attachTree(this, "execute") {
     val numInputRows = longMetric("numInputRows")
     val numOutputRows = longMetric("numOutputRows")
-    if (groupingExpressions.isEmpty) {
+    val oldRdd = if (groupingExpressions.isEmpty) {
       child.execute().mapPartitions { iter =>
         val buffer = newAggregateBuffer()
         var currentRow: InternalRow = null
@@ -212,6 +212,9 @@ case class Aggregate(
           }
         }
       }
+    }
+    oldRdd.mapPartitions { iter =>
+      mapWithReuse[InternalRow](iter, row => row, true) //zengdan
     }
   }
 }

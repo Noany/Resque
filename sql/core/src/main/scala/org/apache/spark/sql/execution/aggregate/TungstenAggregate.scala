@@ -38,7 +38,7 @@ case class TungstenAggregate(
   extends UnaryNode {
 
   override def operatorMatch(plan: SparkPlan):Boolean = plan match{
-    case agg: SortBasedAggregate =>
+    case agg: TungstenAggregate =>
       initialInputBufferOffset == agg.initialInputBufferOffset &&
         compareOptionExpressions(requiredChildDistributionExpressions, agg.requiredChildDistributionExpressions) &&
         compareExpressions(groupingExpressions.map(_.transformExpression()),
@@ -138,10 +138,15 @@ case class TungstenAggregate(
     // Note: we need to set up the iterator in each partition before computing the
     // parent partition, so we cannot simply use `mapPartitions` here (SPARK-9747).
 
-    new MapPartitionsWithPreparationRDD[UnsafeRow, InternalRow, TungstenAggregationIterator](
+    val rdd = new MapPartitionsWithPreparationRDD[UnsafeRow, InternalRow, TungstenAggregationIterator](
           child.execute(), preparePartition, executePartition, preservesPartitioning = true)
-    .asInstanceOf[RDD[InternalRow]].mapPartitions { iter =>
-      mapWithReuse[InternalRow](iter, row => row, true)  //zengdan
+          .asInstanceOf[RDD[InternalRow]]
+    if (resultExpressions.isEmpty) {
+      rdd
+    } else {
+      rdd.mapPartitions { iter =>
+        mapWithReuse[InternalRow](iter, row => row, true) //zengdan
+      }
     }
   }
 

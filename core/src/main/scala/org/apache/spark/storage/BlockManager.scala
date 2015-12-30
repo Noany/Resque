@@ -77,7 +77,7 @@ private[spark] class BlockManager(
   private val blockInfo = new TimeStampedHashMap[BlockId, BlockInfo]
 
   private val futureExecutionContext = ExecutionContext.fromExecutorService(
-    ThreadUtils.newDaemonCachedThreadPool("block-manager-future", 256)) //zengdan change 128 to 256
+    ThreadUtils.newDaemonCachedThreadPool("block-manager-future", 128))
 
   // Actual storage of where blocks are kept
   private var externalBlockStoreInitialized = false

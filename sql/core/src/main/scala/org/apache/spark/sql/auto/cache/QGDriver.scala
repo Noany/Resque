@@ -129,7 +129,7 @@ object QGDriver{
   }
 
   def rewrittenPlan(plan: SparkPlan, sqlContext: SQLContext, actor: ActorRef): PlanUpdate = {
-    //QueryGraph.qg.planRewritten(plan)
+    //QueryGraph.qg.planRewritten(plan)  //test
     ///*
     val conf = sqlContext.sparkContext.getConf
     val appId = sqlContext.sparkContext.applicationId  //make subdir in qgmaster to store jars

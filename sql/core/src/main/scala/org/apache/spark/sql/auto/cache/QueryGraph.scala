@@ -17,9 +17,11 @@ import org.apache.spark.sql.auto.cache.QGMaster._
 import org.apache.spark.sql.auto.cache.QGUtils.{NodeDesc, PlanUpdate}
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression}
 import org.apache.spark.sql.catalyst.plans.logical.{LogicalPlan}
+import org.apache.spark.sql.catalyst.plans.physical.{RangePartitioning, HashPartitioning}
 import org.apache.spark.sql.execution.QNodeRef
 import org.apache.spark.sql.columnar.{InMemoryColumnarTableScan, InMemoryRelation}
 import org.apache.spark.sql.execution._
+import org.apache.spark.sql.execution.aggregate.TungstenAggregate
 import org.apache.spark.storage.{ExternalBlockStore, TachyonBlockManager}
 import org.apache.spark.util.SignalLogger
 import org.apache.spark.{Logging, SparkConf, SparkContext}
@@ -59,7 +61,7 @@ class QueryNode(plan: SparkPlan) {
     val index = planClassName.lastIndexOf(".")
 
     "id: " + id + " statistics: " + stats(0) + " " + stats(1) + " " + stats(2) +
-      " " + planClassName.substring(index+1)
+      " " + planClassName.substring(index+1) + " cached: " + cached
   }
 
 }
@@ -109,7 +111,7 @@ class QueryGraph(conf: SparkConf){
     val newNode = new QueryNode(plan)
     curChild.foreach(_.parents.append(newNode))
     nodes.put(newNode.id,newNode)
-    plan.nodeRef = Some(QNodeRef(newNode.id, false, true, false))
+    plan.nodeRef = Some(QNodeRef(newNode.id, false, true, false, -1))
     refs.put(plan.id, plan.nodeRef.get)
     newNode.stats(0) = 1
   }
@@ -177,9 +179,7 @@ class QueryGraph(conf: SparkConf){
     //reuse stored data
     //zengdan test failure
     if(node.cached) {
-      // && node.schema.isDefined
       plan.nodeRef.get.reuse = true
-      //plan.nodeRef.get.cache = true
     }
     //没有统计信息的暂不参与计算
     if(node.stats(2) > 0){
@@ -201,7 +201,6 @@ class QueryGraph(conf: SparkConf){
         if(remove){
           maxPlans.append(plan)
         }
-
       }
     }
   }
@@ -215,7 +214,7 @@ class QueryGraph(conf: SparkConf){
       for (leave <- root.parents) {
         if (leave.getPlan.operatorMatch(plan)) {
           //leave.stats(0) += 1
-          plan.nodeRef = Some(QNodeRef(leave.id, false, false, false))
+          plan.nodeRef = Some(QNodeRef(leave.id, false, false, false, leave.stats(1)))
           update(leave, plan, maxPlans)
           refs.put(plan.id, plan.nodeRef.get)
           return
@@ -235,7 +234,26 @@ class QueryGraph(conf: SparkConf){
         update(nodes.get(child.nodeRef.get.id).get, child, maxPlans)
       }
       children.append(nodes.get(child.nodeRef.get.id).get)
-    }else {
+    } else if (plan.isInstanceOf[TungstenAggregate] && plan.children.size == 1 &&
+      plan.children(0).isInstanceOf[TungstenAggregate] &&
+      plan.children(0).asInstanceOf[TungstenAggregate].resultExpressions.isEmpty) {
+      val branchMaxPlans = new Array[ArrayBuffer[SparkPlan]](plan.children(0).children.length)
+      var i = 0
+      while (i < plan.children(0).children.length) {
+        branchMaxPlans(i) = new ArrayBuffer[SparkPlan]()
+        val curChild = plan.children(0).children(i)
+        matchPlan(curChild, refs, varNodes, branchMaxPlans(i))
+        val curNode = nodes.get(curChild.nodeRef.get.id).get
+        children.append(curNode)
+        i += 1
+      }
+
+      maxPlans ++=
+        branchMaxPlans.foldLeft(new ArrayBuffer[SparkPlan]())((buffer, i) => {
+          i.foreach(buffer.append(_)); buffer
+        })
+
+    } else {
       val branchMaxPlans = new Array[ArrayBuffer[SparkPlan]](plan.children.length)
       var i = 0
       while (i < plan.children.length) {
@@ -259,7 +277,7 @@ class QueryGraph(conf: SparkConf){
         if((children.length == 1) ||
           (children.length > 1 && !children.exists(!_.parents.contains((candidate))))) {
           //candidate.stats(0) += 1
-          plan.nodeRef = Some(QNodeRef(candidate.id, false, false, false))
+          plan.nodeRef = Some(QNodeRef(candidate.id, false, false, false, candidate.stats(1)))
           update(candidate, plan, maxPlans)
           refs.put(plan.id, plan.nodeRef.get)
           return
@@ -276,16 +294,27 @@ class QueryGraph(conf: SparkConf){
     if(plan.isInstanceOf[Exchange]){
       var found = false
       var index = 0
+      val curPlan = plan.asInstanceOf[Exchange]
       while(index < children(0).parents.length && !found){
         val candidate = children(0).parents(index)
         if (candidate.getPlan.isInstanceOf[Exchange]) {
-
-          if(TachyonBlockManager.checkOperatorFileExists(candidate.id)){
-            val canPlan = candidate.getPlan.asInstanceOf[Exchange]
-            val buffers = varNodes.get(plan.id).getOrElse(new ArrayBuffer[NodeDesc]())
-            buffers.append(NodeDesc(QNodeRef(candidate.id, false, false, true), canPlan.newPartitioning))
-            varNodes.put(plan.id, buffers)
-            found = true
+          val canPlan = candidate.getPlan.asInstanceOf[Exchange]
+          if (canPlan.newPartitioning.reuseMatch(curPlan.newPartitioning)) {
+            //only handle different partition number now
+            //TODO: handle different partition key
+            if (TachyonBlockManager.checkOperatorFileExists(candidate.id)) {
+              val buffers = varNodes.get(plan.id).getOrElse(new ArrayBuffer[NodeDesc]())
+              val partition = curPlan.newPartitioning match {
+                case HashPartitioning(exprs, _) => Some(HashPartitioning(exprs, canPlan.newPartitioning.numPartitions))
+                case RangePartitioning(exprs, _) => Some(RangePartitioning(exprs, canPlan.newPartitioning.numPartitions))
+                case _ => None
+              }
+              if (partition.isDefined) {
+                buffers.append(NodeDesc(QNodeRef(candidate.id, false, false, true, candidate.stats(1)), partition.get))
+                varNodes.put(plan.id, buffers)
+                found = true
+              }
+            }
           }
         }
         index += 1
@@ -341,7 +370,7 @@ class QueryGraph(conf: SparkConf){
               }
 
               val buffers = varNodes.get(plan.id).getOrElse(new ArrayBuffer[NodeDesc]())
-              buffers.append(NodeDesc(QNodeRef(candidate.id, false, false, true), newList))
+              buffers.append(NodeDesc(QNodeRef(candidate.id, false, false, true, candidate.stats(1)), newList))
               varNodes.put(plan.id, buffers)
 
               //val newProject = new Project(canPlan.projectList, plan.children(0))
@@ -353,7 +382,46 @@ class QueryGraph(conf: SparkConf){
           index += 1
         }
 
+      case TungstenProject(_, _) =>
+        var found = false
+        var index = 0
 
+        while(index < child.parents.length && !found){
+          val candidate = child.parents(index)
+          if(candidate.getPlan.isInstanceOf[TungstenProject]){
+            val candidateExpr = candidate.getPlan.transformedExpressions.map(_.treeStringByName)
+            val planExpr = plan.transformedExpressions.map(_.treeStringByName)
+            if(planExpr.filter(!candidateExpr.contains(_)).size == 0 &&
+              TachyonBlockManager.checkOperatorFileExists(candidate.id)){
+              val canPlan = candidate.getPlan.asInstanceOf[TungstenProject]
+              val curLists = plan.asInstanceOf[TungstenProject].projectList.map(_.transformExpression())
+              //To do: Optimize
+              val newList = canPlan.projectList.map{x =>
+                var canExpr = x.transformExpression()
+                var i = 0
+                var flag = true
+                while(i < curLists.length && flag){
+                  if(canExpr.compareTree(curLists(i)) == 0){
+                    canExpr = curLists(i)   //replace added project expression with current plan expression to avoid bound error
+                    flag = false
+                  }
+                  i += 1
+                }
+                canExpr
+              }
+
+              val buffers = varNodes.get(plan.id).getOrElse(new ArrayBuffer[NodeDesc]())
+              buffers.append(NodeDesc(QNodeRef(candidate.id, false, false, true, candidate.stats(1)), newList))
+              varNodes.put(plan.id, buffers)
+
+              //val newProject = new Project(canPlan.projectList, plan.children(0))
+              //newProject.nodeRef = Some(QNodeRef(candidate.id, false, false, true))
+              //plan.withNewChildren(Seq(newProject))
+              found = true
+            }
+          }
+          index += 1
+        }
 
       case _ =>
     }
@@ -408,7 +476,7 @@ class QueryGraph(conf: SparkConf){
     if (!cachedBenefits.isEmpty) {
       client.qgmaster_setBenefit(mapAsJavaMap(cachedBenefits))
     }
-    QueryGraph.printResult(this)
+    //QueryGraph.printResult(this)
   }
 
   def changeToMemory(id: Int) : Boolean = {
@@ -493,7 +561,7 @@ object  QueryGraph extends Logging{
   }
 
   def printResult(graph: QueryGraph){
-    /*
+    ///*
     println("=====Parents=====")
     graph.root.parents.foreach(println)
 
@@ -506,7 +574,7 @@ object  QueryGraph extends Logging{
     }
 
     println("===============")
-    */
+    //*/
 
   }
 

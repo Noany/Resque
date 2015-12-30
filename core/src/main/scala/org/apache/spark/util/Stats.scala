@@ -7,4 +7,5 @@ import scala.collection.mutable.Map
  */
 object Stats {
   val statistics = new ThreadLocal[Map[Int, Array[Int]]]()
+  val initialTimes = new ThreadLocal[Map[Int, Int]]()
 }

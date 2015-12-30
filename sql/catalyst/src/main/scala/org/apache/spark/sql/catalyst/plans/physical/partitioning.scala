@@ -118,6 +118,26 @@ sealed trait Partitioning {
    */
   def satisfies(required: Distribution): Boolean
 
+  //zengdan
+  def compareExpressions(expr1: Seq[Expression], expr2: Seq[Expression]): Boolean ={
+    val e1 = expr1.map(_.treeStringByName).sortWith(_.compareTo(_) < 0)
+    val e2 = expr2.map(_.treeStringByName).sortWith(_.compareTo(_) < 0)
+
+    if(e1.length != e2.length)
+      false
+    else if(e1.length == 0)
+      true
+    else{
+      var i = 0
+      while(i < e1.length){
+        if(e1(i).compareTo(e2(i)) != 0)
+          return false
+        i += 1
+      }
+      i != 0
+    }
+  }
+
   /**
    * Returns true iff we can say that the partitioning scheme of this [[Partitioning]]
    * guarantees the same partitioning scheme described by `other`.
@@ -134,6 +154,13 @@ sealed trait Partitioning {
    * same distribution guarantees.
    */
   def compatibleWith(other: Partitioning): Boolean
+
+  //zengdan
+  def matches(other: Partitioning): Boolean = compatibleWith(other)
+
+  //zengdan
+  //used in exchange reuse case
+  def reuseMatch(other: Partitioning): Boolean = compatibleWith(other)
 
   /**
    * Returns true iff we can say that the partitioning scheme of this [[Partitioning]] guarantees
@@ -228,6 +255,20 @@ case class HashPartitioning(expressions: Seq[Expression], numPartitions: Int)
     case _ => false
   }
 
+  //zengdan
+  override def matches(other: Partitioning): Boolean = other match {
+    case o: HashPartitioning =>
+      this.numPartitions == o.numPartitions &&
+        compareExpressions(this.expressions, o.expressions)
+    case _ => false
+  }
+
+  //zengdan
+  override def reuseMatch(other: Partitioning): Boolean = other match {
+    case o: HashPartitioning => compareExpressions(this.expressions, o.expressions)
+    case _ => false
+  }
+
   override def guarantees(other: Partitioning): Boolean = other match {
     case o: HashPartitioning => this == o
     case _ => false
@@ -266,6 +307,20 @@ case class RangePartitioning(ordering: Seq[SortOrder], numPartitions: Int)
 
   override def compatibleWith(other: Partitioning): Boolean = other match {
     case o: RangePartitioning => this == o
+    case _ => false
+  }
+
+  //zengdan
+  override def matches(other: Partitioning): Boolean = other match {
+    case o: RangePartitioning =>
+      this.numPartitions == o.numPartitions &&
+        !this.ordering.zipWithIndex.exists(x => !x._1.equals(o.ordering(x._2)))
+    case _ => false
+  }
+
+  //zengdan
+  override def reuseMatch(other: Partitioning): Boolean = other match {
+    case o: RangePartitioning => !this.ordering.zipWithIndex.exists(x => !x._1.equals(o.ordering(x._2)))
     case _ => false
   }
 

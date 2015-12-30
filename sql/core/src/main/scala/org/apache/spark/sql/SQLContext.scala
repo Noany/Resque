@@ -126,8 +126,7 @@ class SQLContext(@transient val sparkContext: SparkContext)
       planId = makeIdForPlan(plan, planId)
       //recoveryContext(plan, QGDriver.rewrittenPlan(plan, this, qgDriver))
       val planUpdate = QGDriver.rewrittenPlan(plan, this, qgDriver)
-      val x = updatePlan(plan, planUpdate.refs, planUpdate.varNodes)
-      x
+      updatePlan(plan, planUpdate.refs, planUpdate.addNodes)
       //setNodeRef(plan, QGDriver.rewrittenPlan(plan, this, qgDriver))
     }else
       plan
@@ -160,7 +159,7 @@ class SQLContext(@transient val sparkContext: SparkContext)
 
     if(refs.get(plan.id).isDefined){
       val nr = refs.get(plan.id).get
-      plan.nodeRef = Some(QNodeRef(nr.id, nr.cache, nr.collect, nr.reuse))
+      plan.nodeRef = Some(QNodeRef(nr.id, nr.cache, nr.collect, nr.reuse, nr.existTime))
     }
 
     //children need to add
@@ -1000,7 +999,7 @@ class SQLContext(@transient val sparkContext: SparkContext)
         filterCondition.map(Filter(_, scan)).getOrElse(scan)
       } else {
         val scan = scanBuilder((projectSet ++ filterSet).toSeq)
-        Project(projectList, filterCondition.map(Filter(_, scan)).getOrElse(scan))
+        Project(projectList, filterCondition.map(Filter(_, scan)).getOrElse(scan)) //zengdan for test
       }
     }
   }
