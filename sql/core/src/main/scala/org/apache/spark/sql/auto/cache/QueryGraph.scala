@@ -473,7 +473,7 @@ class QueryGraph(conf: SparkConf){
   def updateBenefitOnCache(ids: ArrayBuffer[Int]) = {
     ///*
     //已存数据的benefit
-    var cachedBenefits = scala.collection.Map[String, (java.lang.Double]()
+    var cachedBenefits = scala.collection.Map[String, java.lang.Double]()
     for (id <- ids) {
       val path = rootPath + "/" + id
       if (nodes.get(id).isDefined) {

@@ -101,8 +101,8 @@
       <file leaf-file-name="QueryGraph.scala" pinned="false" current-in-tab="true">
         <entry file="file://$PROJECT_DIR$/sql/core/src/main/scala/org/apache/spark/sql/auto/cache/QueryGraph.scala">
           <provider selected="true" editor-type-id="text-editor">
-            <state vertical-scroll-proportion="-9.472289">
-              <caret line="54" column="43" selection-start-line="54" selection-start-column="43" selection-end-line="54" selection-end-column="43" />
+            <state vertical-scroll-proportion="0.65301204">
+              <caret line="482" column="7" selection-start-line="482" selection-start-column="7" selection-end-line="482" selection-end-column="7" />
               <folding>
                 <element signature="e#6355#11071#0" expanded="false" />
                 <element signature="e#11075#15161#0" expanded="false" />
@@ -1604,12 +1604,12 @@
       <workItem from="1451007794165" duration="9678000" />
       <workItem from="1451267968911" duration="33614000" />
       <workItem from="1451352041815" duration="25814000" />
-      <workItem from="1451456497679" duration="5219000" />
+      <workItem from="1451456497679" duration="5785000" />
     </task>
     <servers />
   </component>
   <component name="TimeTrackingManager">
-    <option name="totallyTimeSpent" value="434452000" />
+    <option name="totallyTimeSpent" value="435018000" />
   </component>
   <component name="ToolWindowManager">
     <frame x="0" y="22" width="1440" height="788" extended-state="6" />
@@ -2165,8 +2165,8 @@
     </entry>
     <entry file="file://$PROJECT_DIR$/sql/core/src/main/scala/org/apache/spark/sql/auto/cache/QueryGraph.scala">
       <provider selected="true" editor-type-id="text-editor">
-        <state vertical-scroll-proportion="-9.472289">
-          <caret line="54" column="43" selection-start-line="54" selection-start-column="43" selection-end-line="54" selection-end-column="43" />
+        <state vertical-scroll-proportion="0.65301204">
+          <caret line="482" column="7" selection-start-line="482" selection-start-column="7" selection-end-line="482" selection-end-column="7" />
           <folding>
             <element signature="e#6355#11071#0" expanded="false" />
             <element signature="e#11075#15161#0" expanded="false" />
