@@ -7,6 +7,7 @@ import akka.remote.{DisassociatedEvent, AssociatedEvent, RemotingLifecycleEvent}
 import org.apache.spark.rpc.RpcTimeout
 import org.apache.spark.util.{SerializableBuffer, Utils, AkkaUtils}
 import org.apache.spark.{SparkConf, SecurityManager, Logging, SparkContext}
+import tachyon.thrift.BenefitInfo
 
 import scala.collection.mutable.Map
 import scala.concurrent.Await
@@ -83,8 +84,8 @@ class QGWorker(conf: SparkConf) extends Actor with Logging{
     askMasterWithReply[Boolean](ChangeToMemory(id))
   }
 
-  def getBenefit(id: Int):Double = {
-    askMasterWithReply[Double](GetBenefit(id))
+  def getBenefit(id: Int):BenefitInfo = {
+    askMasterWithReply[BenefitInfo](GetBenefit(id))
   }
 
 
@@ -112,9 +113,9 @@ object QGWorker{
       AkkaUtils.numRetries(conf), AkkaUtils.retryWaitMs(conf), new RpcTimeout(timeout, ""))
   }
 
-  def getBenefit(id: Int, conf: SparkConf, actor: ActorRef): Double = {
+  def getBenefit(id: Int, conf: SparkConf, actor: ActorRef): BenefitInfo = {
     val timeout = Duration.create(conf.get("spark.sql.auto.cache.ask.timeout","60").toLong, "seconds")
-    AkkaUtils.askWithReply[Double](GetBenefit(id), actor,
+    AkkaUtils.askWithReply[BenefitInfo](GetBenefit(id), actor,
       AkkaUtils.numRetries(conf), AkkaUtils.retryWaitMs(conf), new RpcTimeout(timeout, ""))
   }
 

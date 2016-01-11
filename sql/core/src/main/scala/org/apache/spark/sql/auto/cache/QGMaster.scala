@@ -113,7 +113,7 @@ private[spark] class QGMaster(
 
     case GetBenefit(id) =>
       logInfo("Got GetBenefit in QGMaster")
-      sender ! QueryGraph.qg.getBenefit(id)
+      sender ! QueryGraph.qg.getBenefitInfo(id)
 
     case AssociatedEvent(localAddress, remoteAddress, inbound) =>
       logInfo(s"Successfully connected to $remoteAddress")

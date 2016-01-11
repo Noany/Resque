@@ -62,7 +62,8 @@ class ShuffledRowRDD(
   override val partitioner = Some(part)
 
   override def getPartitions: Array[Partition] = {
-    dependencies
+    //dependencies
+    prev.partitions
     Array.tabulate[Partition](part.numPartitions)(i => new ShuffledRowRDDPartition(i))
   }
 

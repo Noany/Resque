@@ -81,6 +81,7 @@ class ShuffledRDD[K, V, C](
   override val partitioner = Some(part)
 
   override def getPartitions: Array[Partition] = {
+    prev.partitions   //zengdan test
     Array.tabulate[Partition](part.numPartitions)(i => new ShuffledRDDPartition(i))
   }
 

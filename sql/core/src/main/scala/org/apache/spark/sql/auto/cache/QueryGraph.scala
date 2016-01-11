@@ -27,6 +27,7 @@ import org.apache.spark.util.SignalLogger
 import org.apache.spark.{Logging, SparkConf, SparkContext}
 import tachyon.TachyonURI
 import tachyon.conf.TachyonConf
+import tachyon.thrift.BenefitInfo
 import tachyon.util.CommonUtils
 
 import scala.collection.mutable.{ArrayBuffer, Map, HashMap}
@@ -79,6 +80,9 @@ class QueryGraph(conf: SparkConf){
 
   val memThreshold = conf.get("spark.sql.reuse.memory.benefit.threshold", "0").toInt
   val diskThreshold = conf.get("spark.sql.reuse.disk.benefit.threshold", "0").toInt
+
+  val memBandwidth = conf.get("spark.sql.reuse.memory.bandwidth", "25000").toInt
+  val diskBandwidth = conf.get("spark.sql.reuse.disk.bandwidth", "200").toInt
 
   var client: tachyon.client.TachyonFS = _
 
@@ -171,7 +175,10 @@ class QueryGraph(conf: SparkConf){
   }
 
   def getBenefit(node: QueryNode, mem: Boolean): Double = if(node.stats(2) > 0){
-    node.stats(0)*node.stats(1)*1.0/node.stats(2)
+    val bandwidth = if (mem) memBandwidth else diskBandwidth
+    val benefit = node.lastAccess*(node.stats(0)*node.stats(1)*1.0/1000 - (node.stats(0)+1)*node.stats(2)*1.0/(1000000*bandwidth));
+    System.out.println("Benefit for node " + node.id + " is " + benefit);
+    benefit
   }else{
     0.0
   }
@@ -182,9 +189,10 @@ class QueryGraph(conf: SparkConf){
     node.stats(0) += 1
     node.lastAccess = accessTime
     //reuse stored data
-    if(node.cached) {
+    if(node.cached && client.exist(new TachyonURI(rootPath + "/" + node.id))) {
       plan.nodeRef.get.reuse = true
       curMatchedNodes += node.id  //zengdan
+      //reuseCount++   统计缓存数据的重用率
     }
     //没有统计信息的暂不参与计算
     if(node.stats(2) > 0){
@@ -466,28 +474,27 @@ class QueryGraph(conf: SparkConf){
       }
     }
 
-
-    //QueryGraph.printResult(this)
+    if (conf.get("spark.sql.qgmaster.print.stats", "false").toBoolean)
+      QueryGraph.printResult(this)
   }
 
   def updateBenefitOnCache(ids: ArrayBuffer[Int]) = {
     ///*
     //已存数据的benefit
-    var cachedBenefits = scala.collection.Map[String, java.lang.Double]()
+    var cachedBenefits = scala.collection.Map[String, BenefitInfo]()
     for (id <- ids) {
       val path = rootPath + "/" + id
       if (nodes.get(id).isDefined) {
         val node = nodes.get(id).get
         if (client.exist(new TachyonURI(path)))
-          cachedBenefits += (path -> getBenefit(node))
+          cachedBenefits += (path -> getBenefitInfo(id))
       }
     }
     //*/
-
     import scala.collection.JavaConversions._
 
     if (!cachedBenefits.isEmpty) {
-      client.qgmaster_setBenefit(mapAsJavaMap(cachedBenefits))
+      client.qgmaster_updateBenefit(mapAsJavaMap(cachedBenefits))
     }
   }
 
@@ -502,6 +509,16 @@ class QueryGraph(conf: SparkConf){
   def getBenefit(id: Int) : Double = {
     if(nodes.get(id).isDefined){
       getBenefit(nodes.get(id).get)
+    }else{
+      throw new Exception("Get the benefit of non-exisiting node")
+    }
+  }
+
+  def getBenefitInfo(id: Int) : BenefitInfo = {
+    if(nodes.get(id).isDefined){
+      val node = nodes.get(id).get
+      new BenefitInfo(node.lastAccess, node.stats(0), node.stats(1), node.stats(2))
+      //getBenefit(nodes.get(id).get)
     }else{
       throw new Exception("Get the benefit of non-exisiting node")
     }
@@ -566,10 +583,10 @@ object  QueryGraph extends Logging{
     buf.flip
     buf.flip
     val startTimeMs: Long = CommonUtils.getCurrentMs
-    val file: TachyonFile = tachyonClient.getFile(path)
-    val os: OutStream = file.getOutStream(WriteType.TRY_CACHE, buf.array.length, id, 0, benefit)
-    os.write(buf.array)
-    os.close
+    //val file: TachyonFile = tachyonClient.getFile(path)
+    //val os: OutStream = file.getOutStream(WriteType.TRY_CACHE, buf.array.length, id, 0, benefit)
+    //os.write(buf.array)
+    //os.close
   }
 
   def printResult(graph: QueryGraph){

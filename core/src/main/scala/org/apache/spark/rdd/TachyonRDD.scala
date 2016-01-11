@@ -23,6 +23,7 @@ class TachyonRDD [T: ClassTag](sc: SparkContext, operatorId: Int)
   //var needRecompute = false
   //this.persist(StorageLevel.OFF_HEAP)
 
+  //先调用getPartitions，再调用compute
   override def getPartitions: Array[Partition] = {
     val files: List[ClientFileInfo] = externalBlockStore.listStatus(operatorId)
     val ps = new Array[Partition](files.size())

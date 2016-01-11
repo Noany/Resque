@@ -9,7 +9,7 @@ import java.nio.ByteBuffer
 import java.text.SimpleDateFormat
 import java.util.{List, Date, Random}
 
-import tachyon.thrift.ClientFileInfo
+import tachyon.thrift.{BenefitInfo, ClientFileInfo}
 
 import scala.util.control.NonFatal
 
@@ -26,7 +26,7 @@ import org.apache.spark.util.{ShutdownHookManager, Utils}
 
 
 private[spark] class ReuseBlockManager() extends ExternalBlockManager with Logging {
-  lazy val idToBenefit = scala.collection.mutable.Map[Int, Double]()
+  lazy val idToBenefit = scala.collection.mutable.Map[Int, BenefitInfo]()
 
   //zengdan
   def checkGlobalExists(operatorID: Int): Boolean = {
@@ -183,8 +183,8 @@ private[spark] class ReuseBlockManager() extends ExternalBlockManager with Loggi
       val id = fileName(fileName.length - 2).toInt
       val index = fileName(fileName.length - 1).toInt
       //val os = file.getOutStream(WriteType.TRY_CACHE)
-      val benefit = idToBenefit.get(id).getOrElse(QGWorker.getBenefit(id, SparkEnv.get.conf, qgWorker))
-      idToBenefit.put(id, benefit)
+      val benefit = QGWorker.getBenefit(id, SparkEnv.get.conf, qgWorker)
+      //idToBenefit.put(id, benefit)  benefit在不断彼岸花
       //val os = file.getOutStream(WriteType.TRY_CACHE)
       var partitionOs: OutStream = null
       try {
@@ -286,8 +286,9 @@ private[spark] class ReuseBlockManager() extends ExternalBlockManager with Loggi
         val changeToMemory = QGWorker.changeToMemory(id, SparkEnv.get.conf, qgWorker)
         if (changeToMemory) {
           //store file
-          val benefit = idToBenefit.get(id).getOrElse(QGWorker.getBenefit(id, SparkEnv.get.conf, qgWorker))
-          idToBenefit.put(id, benefit)
+          val benefit = QGWorker.getBenefit(id, SparkEnv.get.conf, qgWorker)
+            //idToBenefit.get(id).getOrElse(QGWorker.getBenefit(id, SparkEnv.get.conf, qgWorker))
+          //idToBenefit.put(id, benefit)
           try {
             client.movePartitionToMemory(id, index, benefit, file)
           } catch {
